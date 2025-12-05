@@ -2,24 +2,31 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Svapo Manager</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Svapo Manager Cloud</title>
     
+    <!-- PWA Settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☁️</text></svg>">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Import Map per gestire i moduli React dal browser -->
+    <!-- React & Babel -->
     <script type="importmap">
     {
         "imports": {
             "react": "https://esm.sh/react@18.2.0",
             "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-            "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+            "firebase/app": "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js"
         }
     }
     </script>
-
-    <!-- Babel per compilare JSX nel browser -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
@@ -28,9 +35,10 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in { animation: fadeIn 0.3s ease-out forwards; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+        body { overscroll-behavior-y: none; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-slate-50 text-slate-800 selection:bg-indigo-100">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -39,28 +47,37 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle
         } from 'lucide-react';
+        
+        // --- FIREBASE IMPORTS ---
+        import { initializeApp } from 'firebase/app';
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+
+        // --- FIREBASE CONFIGURATION ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "TUO_API_KEY",
+            authDomain: "TUO_PROJECT.firebaseapp.com",
+            projectId: "TUO_PROJECT_ID",
+            storageBucket: "TUO_PROJECT.appspot.com",
+            messagingSenderId: "...",
+            appId: "..."
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'svapo-manager-default';
 
         const OrderManager = () => {
             // --- STATE ---
-            
-            const [users, setUsers] = useState(() => {
-                const saved = localStorage.getItem('vapeUsers');
-                return saved ? JSON.parse(saved) : ['Gestore', 'Marco', 'Giulia'];
-            });
-
-            const [orders, setOrders] = useState(() => {
-                const saved = localStorage.getItem('vapeOrders');
-                return saved ? JSON.parse(saved) : [];
-            });
-            
-            const [paymentRequests, setPaymentRequests] = useState(() => {
-                const saved = localStorage.getItem('vapePaymentRequests');
-                return saved ? JSON.parse(saved) : {};
-            });
-
+            const [users, setUsers] = useState(['Gestore', 'Marco', 'Giulia']);
+            const [orders, setOrders] = useState([]);
+            const [paymentRequests, setPaymentRequests] = useState({});
             const [currentUser, setCurrentUser] = useState(null);
+            const [firebaseUser, setFirebaseUser] = useState(null);
             
             // Login State
             const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
@@ -69,45 +86,69 @@
             
             const [view, setView] = useState('dashboard'); 
             const [activeOrderId, setActiveOrderId] = useState(null);
-            
             const [newUserName, setNewUserName] = useState('');
             const [isAddingUser, setIsAddingUser] = useState(false);
 
-            // --- PERSISTENCE ---
-            useEffect(() => { localStorage.setItem('vapeOrders', JSON.stringify(orders)); }, [orders]);
-            useEffect(() => { localStorage.setItem('vapeUsers', JSON.stringify(users)); }, [users]);
-            useEffect(() => { localStorage.setItem('vapePaymentRequests', JSON.stringify(paymentRequests)); }, [paymentRequests]);
+            // --- FIREBASE SYNC ---
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (err) {
+                        console.error("Auth Error:", err);
+                    }
+                };
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (user) => setFirebaseUser(user));
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!firebaseUser) return;
+                const qOrders = collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders');
+                const unsubOrders = onSnapshot(qOrders, (snapshot) => {
+                    const loadedOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    loadedOrders.sort((a, b) => b.id - a.id);
+                    setOrders(loadedOrders);
+                });
+                const docSettings = doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global');
+                const unsubSettings = onSnapshot(docSettings, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        if (data.users) setUsers(data.users);
+                        if (data.paymentRequests) setPaymentRequests(data.paymentRequests);
+                    } else {
+                        setDoc(docSettings, { users: ['Gestore', 'Marco', 'Giulia'], paymentRequests: {} });
+                    }
+                });
+                return () => { unsubOrders(); unsubSettings(); };
+            }, [firebaseUser]);
 
             // --- CALCULATIONS ---
-
             const isManager = currentUser === 'Gestore';
 
-            // User Stats (For Guest Dashboard)
             const userStats = useMemo(() => {
                 if (!currentUser || isManager) return null;
-                const myItems = orders.flatMap(o => o.items.map(i => ({...i, date: o.date, orderTitle: o.title})))
+                const myItems = orders.flatMap(o => (o.items || []).map(i => ({...i, date: o.date, orderTitle: o.title})))
                                     .filter(i => i.person === currentUser);
-                
                 const totalItems = myItems.length;
                 const pendingItems = myItems.filter(i => !i.paid).length;
-                
                 return { totalItems, pendingItems, myItems };
             }, [orders, currentUser, isManager]);
 
-            // Manager Stats (For Manager Dashboard)
             const managerStats = useMemo(() => {
                 if (!isManager) return null;
-                let totalCredits = 0; // Money to receive
-                let totalCollected = 0; // Money collected
-
+                let totalCredits = 0;
+                let totalCollected = 0;
                 orders.forEach(order => {
-                    order.items.forEach(item => {
+                    (order.items || []).forEach(item => {
                         const price = parseFloat(item.price) || 0;
-                        if (item.paid) {
-                            totalCollected += price;
-                        } else {
-                            totalCredits += price;
-                        }
+                        if (item.paid) totalCollected += price;
+                        else totalCredits += price;
                     });
                 });
                 return { totalCredits, totalCollected };
@@ -115,25 +156,16 @@
 
             const shoppingList = useMemo(() => {
                 const allItems = orders.flatMap(order => 
-                    order.items.map(item => ({ ...item, orderId: order.id, orderTitle: order.title }))
+                    (order.items || []).map(item => ({ ...item, orderId: order.id, orderTitle: order.title }))
                 );
-
                 const grouped = {};
                 allItems.forEach(item => {
                     const key = item.link ? item.link.trim() : `nolink-${item.id}`;
-                    if (!grouped[key]) {
-                        grouped[key] = {
-                            link: item.link,
-                            count: 0,
-                            items: [],
-                            allBought: true 
-                        };
-                    }
+                    if (!grouped[key]) grouped[key] = { link: item.link, count: 0, items: [], allBought: true };
                     grouped[key].count += 1;
                     grouped[key].items.push(item);
                     if (!item.bought) grouped[key].allBought = false;
                 });
-
                 return Object.values(grouped).sort((a, b) => {
                     if (a.allBought === b.allBought) return 0;
                     return a.allBought ? 1 : -1; 
@@ -143,247 +175,172 @@
             const logisticsData = useMemo(() => {
                 const data = {};
                 users.forEach(u => {
-                    if (u === 'Gestore') return; // Skip manager in debt list
-                    data[u] = {
-                        items: [],
-                        totalDebt: 0,
-                        totalPaid: 0
-                    };
+                    if (u === 'Gestore') return;
+                    data[u] = { items: [], totalDebt: 0, totalPaid: 0 };
                 });
-
                 orders.forEach(order => {
-                    order.items.forEach(item => {
+                    (order.items || []).forEach(item => {
                         if (data[item.person]) {
                             data[item.person].items.push({ ...item, orderDate: order.date, orderTitle: order.title, orderId: order.id });
                             const price = parseFloat(item.price) || 0;
-                            if (item.paid) {
-                                data[item.person].totalPaid += price;
-                            } else {
-                                data[item.person].totalDebt += price;
-                            }
+                            if (item.paid) data[item.person].totalPaid += price;
+                            else data[item.person].totalDebt += price;
                         }
                     });
                 });
                 return data;
             }, [orders, users]);
 
-
             // --- ACTIONS ---
-
             const initiateLogin = (user) => {
                 if (user === 'Gestore') {
-                    setIsLoggingInAsManager(true);
-                    setManagerPassword('');
-                    setLoginError('');
+                    setIsLoggingInAsManager(true); setManagerPassword(''); setLoginError('');
                 } else {
-                    setCurrentUser(user);
-                    setView('dashboard');
+                    setCurrentUser(user); setView('dashboard');
                 }
             };
 
             const submitManagerLogin = (e) => {
                 e.preventDefault();
                 if (managerPassword === '1234') {
-                    setCurrentUser('Gestore');
-                    setView('dashboard');
-                    setIsLoggingInAsManager(false);
+                    setCurrentUser('Gestore'); setView('dashboard'); setIsLoggingInAsManager(false);
                 } else {
-                    setLoginError('Password errata');
-                    setManagerPassword('');
+                    setLoginError('Password errata'); setManagerPassword('');
                 }
             };
 
-            const cancelManagerLogin = () => {
-                setIsLoggingInAsManager(false);
-                setManagerPassword('');
-                setLoginError('');
-            };
-
-            const addUser = (e) => {
+            const addUser = async (e) => {
                 e.preventDefault();
-                if(newUserName.trim() && !users.includes(newUserName.trim())) {
-                    setUsers([...users, newUserName.trim()]);
-                    setNewUserName('');
-                    setIsAddingUser(false);
+                const name = newUserName.trim();
+                if(name && !users.includes(name)) {
+                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: [...users, name] });
+                    setNewUserName(''); setIsAddingUser(false);
                 }
             };
 
-            const createOrder = () => {
+            const createOrder = async () => {
                 const dateStr = new Date().toLocaleDateString('it-IT');
-                const title = `Ordine del ${dateStr}`;
-                setOrders([{
-                    id: Date.now(),
-                    title: title,
-                    date: dateStr,
-                    items: [],
-                    status: 'active' 
-                }, ...orders]);
+                await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders'), {
+                    id: Date.now(), title: `Ordine del ${dateStr}`, date: dateStr, items: [], status: 'active' 
+                });
             };
 
-            const addItemToOrder = (orderId, item) => {
-                setOrders(orders.map(order => {
-                    if (order.id === orderId) {
-                        return { ...order, items: [...order.items, { ...item, id: Date.now(), paid: false, bought: false }] };
-                    }
-                    return order;
-                }));
+            const updateOrderItems = async (orderId, newItems) => {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId), { items: newItems });
             };
 
-            const removeItemFromOrder = (orderId, itemId) => {
-                setOrders(orders.map(order => {
-                    if (order.id === orderId) return { ...order, items: order.items.filter(i => i.id !== itemId) };
-                    return order;
-                }));
+            const addItemToOrder = async (orderId, item) => {
+                const order = orders.find(o => o.id === orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, [...(order.items || []), { ...item, id: Date.now(), paid: false, bought: false }]);
             };
 
-            const updateItemPrice = (orderId, itemId, newPrice) => {
-                setOrders(orders.map(order => {
-                    if (order.id === orderId) {
-                        const updatedItems = order.items.map(item => 
-                            item.id === itemId ? { ...item, price: parseFloat(newPrice) || 0 } : item
-                        );
-                        return { ...order, items: updatedItems };
-                    }
-                    return order;
-                }));
+            const removeItemFromOrder = async (orderId, itemId) => {
+                const order = orders.find(o => o.id === orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.filter(i => i.id !== itemId));
             };
 
-            const togglePaidStatus = (orderId, itemId) => {
+            const updateItemPrice = async (orderId, itemId, newPrice) => {
+                const order = orders.find(o => o.id === orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, price: parseFloat(newPrice) || 0 } : item));
+            };
+
+            const togglePaidStatus = async (orderId, itemId) => {
                 if (!isManager) return; 
-                setOrders(orders.map(order => {
-                    if (order.id === orderId) {
-                        const updatedItems = order.items.map(item => item.id === itemId ? { ...item, paid: !item.paid } : item);
-                        return { ...order, items: updatedItems };
-                    }
-                    return order;
-                }));
+                const order = orders.find(o => o.id === orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, paid: !item.paid } : item));
             };
 
-            const toggleBoughtStatus = (orderId, itemId) => {
-                setOrders(orders.map(order => {
-                    if (order.id === orderId) {
-                        const updatedItems = order.items.map(item => 
-                            item.id === itemId ? { ...item, bought: !item.bought } : item
-                        );
-                        return { ...order, items: updatedItems };
-                    }
-                    return order;
-                }));
+            const toggleBoughtStatus = async (orderId, itemId) => {
+                const order = orders.find(o => o.id === orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
-            const deleteOrder = (id) => {
-                if (confirm('Eliminare ordine?')) {
-                    setOrders(orders.filter(o => o.id !== id));
-                    setActiveOrderId(null);
-                    setView('orders');
+            const deleteOrder = async (orderId) => {
+                if (confirm('Eliminare ordine per tutti?')) {
+                    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId));
+                    setActiveOrderId(null); setView('orders');
                 }
             };
 
-            const togglePaymentRequest = (user) => {
-                setPaymentRequests(prev => ({
-                    ...prev,
-                    [user]: !prev[user]
-                }));
+            const togglePaymentRequest = async (user) => {
+                const newRequests = { ...paymentRequests, [user]: !paymentRequests[user] };
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { paymentRequests: newRequests });
+            };
+
+            const sendWhatsappLogistics = (pName, data) => {
+                const pendingItems = data.items.filter(i => !i.paid);
+                if (pendingItems.length === 0) { alert("Nessun articolo da saldare."); return; }
+                const manualTotal = prompt(`Inserisci totale da richiedere a ${pName}:`);
+                if (manualTotal === null) return;
+                const msg = `Ciao ${pName}, riepilogo sospesi:\n\n` + pendingItems.map(i => `- ${i.link ? 'Prodotto' : i.otherItems}`).join('\n') + `\n\n*Totale da saldare: €${manualTotal}*`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
             const downloadExcel = () => {
-                let csvContent = "data:text/csv;charset=utf-8,";
-                csvContent += "Utente,Ordine,Data,Articolo/Link,Specifiche,Prezzo,Stato\n";
-
-                orders.forEach(order => {
-                    order.items.forEach(item => {
-                        const specs = `${item.liquidMl || ''}ml Liq | ${item.nicotineMl || ''} Nic | ${item.vapeType || ''}`;
-                        const desc = item.link || item.otherItems || 'Articolo';
-                        const status = item.paid ? "Pagato" : "Da Pagare";
-                        const price = item.price ? item.price.toFixed(2) : "0.00";
-                        const safeDesc = `"${desc.replace(/"/g, '""')}"`;
-                        csvContent += `${item.person},"${order.title}",${order.date},${safeDesc},"${specs}",${price},${status}\n`;
-                    });
-                });
-
-                const encodedUri = encodeURI(csvContent);
+                let csv = "Utente,Ordine,Data,Articolo/Link,Specifiche,Prezzo,Stato\n";
+                orders.forEach(o => (o.items||[]).forEach(i => {
+                    const desc = `"${(i.link || i.otherItems || 'Articolo').replace(/"/g, '""')}"`;
+                    csv += `${i.person},"${o.title}",${o.date},${desc},"${i.liquidMl}ml|${i.nicotineMl}nic|${i.vapeType}",${i.price?.toFixed(2)||'0.00'},${i.paid?'Pagato':'Da Pagare'}\n`;
+                }));
                 const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
-                link.setAttribute("download", "ordini_svapo.csv");
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                link.href = encodeURI("data:text/csv;charset=utf-8," + csv);
+                link.download = "ordini_svapo.csv";
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
             };
 
-            // --- RENDER HELPERS ---
+            // --- UI ---
+            if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 animate-pulse">Connessione Cloud...</div>;
 
-            if (!currentUser) {
-                return (
-                    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-                        <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
-                            <div className="text-center mb-8">
-                                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
-                                    <Wind size={32} />
-                                </div>
-                                <h1 className="text-2xl font-bold text-slate-800">Svapo Manager</h1>
-                                <p className="text-slate-500">Chi sta usando l'app?</p>
-                            </div>
-
-                            {/* MANAGER LOGIN */}
-                            {isLoggingInAsManager ? (
-                                <div className="animate-in">
-                                    <button onClick={cancelManagerLogin} className="flex items-center gap-1 text-slate-400 hover:text-slate-600 mb-4 text-sm font-bold">
-                                        <ArrowLeft size={16} /> Indietro
-                                    </button>
-                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><KeyRound className="text-blue-500" /> Accesso Gestore</h2>
-                                    <form onSubmit={submitManagerLogin} className="space-y-4">
-                                        <div>
-                                            <input autoFocus type="password" placeholder="Password (1234)" className="w-full p-4 bg-slate-100 rounded-xl border-2 border-transparent focus:border-blue-500 focus:bg-white outline-none transition text-center text-xl tracking-widest" value={managerPassword} onChange={e => setManagerPassword(e.target.value)} />
-                                            {loginError && <p className="text-red-500 text-sm mt-2 text-center font-bold">{loginError}</p>}
-                                        </div>
-                                        <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">Accedi</button>
-                                    </form>
-                                </div>
-                            ) : (
-                                // USER SELECTION
-                                <>
-                                    <div className="grid grid-cols-2 gap-3 mb-6">
-                                        {users.map(u => (
-                                            <button key={u} onClick={() => initiateLogin(u)} className="relative p-4 rounded-xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-slate-700 flex flex-col items-center gap-2">
-                                                <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold">{u.charAt(0).toUpperCase()}</div>
-                                                {u}
-                                                {u === 'Gestore' && <Lock size={12} className="absolute top-2 right-2 text-slate-400" />}
-                                            </button>
-                                        ))}
-                                        <button onClick={() => setIsAddingUser(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-all flex flex-col items-center gap-2 justify-center">
-                                            <Plus size={24} /> <span className="text-sm">Nuovo</span>
-                                        </button>
-                                    </div>
-                                    {isAddingUser && (
-                                        <form onSubmit={addUser} className="flex gap-2 animate-in">
-                                            <input autoFocus type="text" placeholder="Nome..." className="flex-1 bg-slate-100 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newUserName} onChange={e => setNewUserName(e.target.value)} />
-                                            <button type="submit" className="bg-blue-600 text-white p-3 rounded-xl font-bold">Ok</button>
-                                        </form>
-                                    )}
-                                </>
-                            )}
+            if (!currentUser) return (
+                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
+                        <div className="text-center mb-8">
+                            <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600"><CloudLightning size={32} /></div>
+                            <h1 className="text-2xl font-bold text-slate-800">Svapo Manager</h1>
+                            <p className="text-slate-500 text-sm">Cloud Edition</p>
                         </div>
+                        {isLoggingInAsManager ? (
+                            <div className="animate-in">
+                                <button onClick={() => setIsLoggingInAsManager(false)} className="flex items-center gap-1 text-slate-400 mb-4 text-sm font-bold"><ArrowLeft size={16} /> Indietro</button>
+                                <form onSubmit={submitManagerLogin} className="space-y-4">
+                                    <input autoFocus type="password" placeholder="Password (1234)" className="w-full p-4 bg-slate-100 rounded-xl text-center text-xl tracking-widest outline-none focus:ring-2 focus:ring-blue-500" value={managerPassword} onChange={e => setManagerPassword(e.target.value)} />
+                                    {loginError && <p className="text-red-500 text-sm text-center font-bold">{loginError}</p>}
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold">Accedi</button>
+                                </form>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                    {users.map(u => (
+                                        <button key={u} onClick={() => initiateLogin(u)} className="relative p-4 rounded-xl border-2 border-slate-100 hover:border-blue-500 transition-all font-medium text-slate-700 flex flex-col items-center gap-2">
+                                            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center font-bold">{u.charAt(0)}</div>{u}
+                                            {u === 'Gestore' && <Lock size={12} className="absolute top-2 right-2 text-slate-400" />}
+                                        </button>
+                                    ))}
+                                    <button onClick={() => setIsAddingUser(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 flex flex-col items-center gap-2 justify-center"><Plus size={24} /> <span className="text-sm">Nuovo</span></button>
+                                </div>
+                                {isAddingUser && (
+                                    <form onSubmit={addUser} className="flex gap-2 animate-in"><input autoFocus type="text" placeholder="Nome..." className="flex-1 bg-slate-100 rounded-xl px-4 py-3 outline-none" value={newUserName} onChange={e => setNewUserName(e.target.value)} /><button type="submit" className="bg-blue-600 text-white p-3 rounded-xl font-bold">Ok</button></form>
+                                )}
+                            </>
+                        )}
                     </div>
-                );
-            }
+                </div>
+            );
 
             return (
                 <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-24 md:pb-0">
                     <div className="max-w-4xl mx-auto min-h-screen bg-white shadow-xl flex flex-col border-x border-slate-100 relative">
-                        
-                        {/* HEADER */}
                         <header className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-20">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-200">
-                                    {currentUser.charAt(0).toUpperCase()}
-                                </div>
-                                <div>
-                                    <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">Benvenuto</p>
-                                    <h1 className="text-lg font-bold text-slate-900 leading-none">{currentUser}</h1>
-                                </div>
+                                <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg">{currentUser.charAt(0)}</div>
+                                <div><p className="text-xs text-slate-400 uppercase font-bold">Benvenuto</p><h1 className="text-lg font-bold text-slate-900 leading-none">{currentUser}</h1></div>
                             </div>
-                            
-                            {/* Desktop Nav */}
                             {!activeOrderId && (
                                 <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                                     <NavButtonDesktop icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
@@ -392,88 +349,56 @@
                                     {isManager && <NavButtonDesktop icon={FileSpreadsheet} label="Logistica" active={view === 'logistics'} onClick={() => setView('logistics')} />}
                                 </div>
                             )}
-
-                            <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-red-50 hover:text-red-500 transition-colors">
-                                <LogOut size={18} />
-                            </button>
+                            <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-red-500"><LogOut size={18} /></button>
                         </header>
 
-                        {/* CONTENT AREA */}
                         <main className="flex-1 overflow-y-auto p-4">
-                            
-                            {/* DASHBOARD */}
                             {view === 'dashboard' && (
                                 <div className="space-y-6 animate-in">
-                                    
-                                    {/* MANAGER DASHBOARD */}
                                     {isManager ? (
                                         <div className="space-y-6">
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-2xl text-white shadow-lg shadow-emerald-200">
-                                                    <div className="flex justify-between items-start mb-4">
-                                                        <ArrowUpRight className="opacity-80" />
-                                                        <span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Crediti</span>
-                                                    </div>
-                                                    <p className="text-sm opacity-80">Devono darti</p>
-                                                    <p className="text-3xl font-bold">€{managerStats.totalCredits.toFixed(2)}</p>
+                                                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-2xl text-white shadow-lg">
+                                                    <div className="flex justify-between mb-4"><ArrowUpRight className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Crediti</span></div>
+                                                    <p className="text-sm opacity-80">Devono darti</p><p className="text-3xl font-bold">€{managerStats.totalCredits.toFixed(2)}</p>
                                                 </div>
-                                                <div className="bg-white border border-slate-200 p-5 rounded-2xl">
-                                                    <div className="flex justify-between items-start mb-4 text-slate-400">
-                                                        <PiggyBank />
-                                                        <span className="text-xs bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-bold">Totale</span>
-                                                    </div>
-                                                    <p className="text-sm text-slate-400">Già Incassati</p>
-                                                    <p className="text-3xl font-bold text-slate-800">€{managerStats.totalCollected.toFixed(2)}</p>
+                                                <div className="bg-white border p-5 rounded-2xl">
+                                                    <div className="flex justify-between mb-4 text-slate-400"><PiggyBank /><span className="text-xs bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-bold">Totale</span></div>
+                                                    <p className="text-sm text-slate-400">Incassati</p><p className="text-3xl font-bold text-slate-800">€{managerStats.totalCollected.toFixed(2)}</p>
                                                 </div>
                                             </div>
-                                            
                                             <div className="bg-slate-100 rounded-2xl p-6 text-center">
                                                 <p className="text-slate-500 text-sm mb-4">Gestisci gli ordini e i pagamenti dalla sezione Logistica.</p>
-                                                <button onClick={() => setView('logistics')} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-700 transition">Vai alla Logistica</button>
+                                                <button onClick={() => setView('logistics')} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-700">Vai alla Logistica</button>
                                             </div>
                                         </div>
                                     ) : (
-                                        // GUEST DASHBOARD
                                         <div className="space-y-6">
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-5 rounded-2xl text-white shadow-lg shadow-blue-200">
-                                                    <div className="flex justify-between items-start mb-4">
-                                                        <List className="opacity-80" />
-                                                        <span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Totale</span>
-                                                    </div>
-                                                    <p className="text-sm opacity-80">Articoli Ordinati</p>
-                                                    <p className="text-3xl font-bold">{userStats.totalItems}</p>
+                                                <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-5 rounded-2xl text-white shadow-lg">
+                                                    <div className="flex justify-between mb-4"><List className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Totale</span></div>
+                                                    <p className="text-sm opacity-80">Articoli</p><p className="text-3xl font-bold">{userStats.totalItems}</p>
                                                 </div>
                                                 <div className={`p-5 rounded-2xl border-2 ${userStats.pendingItems > 0 ? 'bg-orange-50 border-orange-100 text-orange-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
-                                                    <div className="flex justify-between items-start mb-4">
-                                                        <CheckSquare />
-                                                        <span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50">Stato</span>
-                                                    </div>
-                                                    <p className="text-sm opacity-80">Da Saldare (Articoli)</p>
-                                                    <p className="text-3xl font-bold">{userStats.pendingItems}</p>
+                                                    <div className="flex justify-between mb-4"><CheckSquare /><span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50">Stato</span></div>
+                                                    <p className="text-sm opacity-80">Da Saldare</p><p className="text-3xl font-bold">{userStats.pendingItems}</p>
                                                 </div>
                                             </div>
-                                            
-                                            {/* History */}
                                             <div>
-                                                <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
-                                                <History size={18} className="text-indigo-500"/> I tuoi acquisti
-                                                </h3>
+                                                <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><History size={18} className="text-indigo-500"/> I tuoi acquisti</h3>
                                                 <div className="space-y-3">
-                                                {userStats.myItems.length === 0 && <p className="text-slate-400 text-sm italic">Non hai ancora comprato nulla.</p>}
-                                                {userStats.myItems.slice().reverse().map((item, idx) => ( 
-                                                    <div key={idx} className="bg-white border border-slate-100 p-3 rounded-xl flex justify-between items-center shadow-sm">
-                                                    <div className="overflow-hidden mr-2">
-                                                        <p className="font-bold text-slate-800 truncate">{item.link || 'Oggetto senza link'}</p>
-                                                        <p className="text-xs text-slate-500">{item.date}</p>
-                                                    </div>
-                                                    <div className="text-right flex-shrink-0">
-                                                        <p className={`text-[10px] font-bold uppercase tracking-wider ${item.paid ? 'text-emerald-500' : 'text-orange-400'}`}>
-                                                        {item.paid ? 'Saldato' : 'Da Saldare'}
-                                                        </p>
-                                                    </div>
-                                                    </div>
-                                                ))}
+                                                    {userStats.myItems.length === 0 && <p className="text-slate-400 text-sm italic">Non hai ancora comprato nulla.</p>}
+                                                    {userStats.myItems.slice().reverse().map((item, idx) => ( 
+                                                        <div key={idx} className="bg-white border p-3 rounded-xl flex justify-between items-center shadow-sm">
+                                                            <div className="overflow-hidden mr-2">
+                                                                <p className="font-bold text-slate-800 truncate">{item.link || 'Oggetto senza link'}</p>
+                                                                <p className="text-xs text-slate-500">{item.date}</p>
+                                                            </div>
+                                                            <div className="text-right flex-shrink-0">
+                                                                <p className={`text-[10px] font-bold uppercase tracking-wider ${item.paid ? 'text-emerald-500' : 'text-orange-400'}`}>{item.paid ? 'Saldato' : 'Da Saldare'}</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                         </div>
@@ -481,37 +406,26 @@
                                 </div>
                             )}
 
-                            {/* ORDERS LIST (Visible only to Guests, Manager uses Logistics) */}
                             {view === 'orders' && !isManager && (
                                 <div className="space-y-4 animate-in">
                                     {!activeOrderId ? (
                                         <>
                                             <div className="flex justify-between items-center mb-2">
                                                 <h2 className="text-xl font-bold text-slate-800">Ordini Gruppo</h2>
-                                                <button onClick={createOrder} className="bg-slate-900 text-white py-2 px-4 rounded-xl hover:bg-slate-800 transition shadow-lg shadow-slate-200 flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
+                                                <button onClick={createOrder} className="bg-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
                                             </div>
-                                            
                                             <div className="space-y-3">
                                                 {orders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
                                                 {orders.map(order => {
-                                                    let relevantItems = order.items.filter(i => i.person === currentUser);
-                                                    
+                                                    const myCount = (order.items || []).filter(i => i.person === currentUser).length;
+                                                    // PRIVACY: Only show orders where user has items or (optionally) show empty orders they can add to.
+                                                    // Request says "ospiti non devono vedere ordini degli altri". But they need to see the container to add their stuff.
+                                                    // Compromise: Show all active orders, but inside they only see theirs.
                                                     return (
-                                                        <div key={order.id} onClick={() => setActiveOrderId(order.id)} className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm hover:border-blue-300 transition-all cursor-pointer relative">
+                                                        <div key={order.id} onClick={() => setActiveOrderId(order.id)} className="bg-white border p-4 rounded-2xl shadow-sm cursor-pointer">
                                                             <div className="flex justify-between items-start">
-                                                                <div>
-                                                                    <h3 className="font-bold text-slate-900">{order.title}</h3>
-                                                                    <p className="text-xs text-slate-500">
-                                                                        I tuoi articoli: {relevantItems.length}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="text-right">
-                                                                    <div className="flex -space-x-2 justify-end">
-                                                                        {[...new Set(relevantItems.map(i => i.person))].slice(0, 3).map((p, idx) => (
-                                                                            <div key={idx} className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">{p.charAt(0)}</div>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
+                                                                <div><h3 className="font-bold text-slate-900">{order.title}</h3><p className="text-xs text-slate-500">I tuoi articoli: {myCount}</p></div>
+                                                                <div className="text-right"><div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">{currentUser.charAt(0)}</div></div>
                                                             </div>
                                                         </div>
                                                     )
@@ -519,78 +433,31 @@
                                             </div>
                                         </>
                                     ) : (
-                                        <OrderDetail 
-                                            order={orders.find(o => o.id === activeOrderId)} 
-                                            users={users} 
-                                            currentUser={currentUser} 
-                                            isManager={isManager}
-                                            onBack={() => setActiveOrderId(null)} 
-                                            onAdd={addItemToOrder} 
-                                            onRemove={removeItemFromOrder} 
-                                            onTogglePaid={togglePaidStatus} 
-                                            onDelete={deleteOrder} 
-                                        />
+                                        <OrderDetail order={orders.find(o => o.id === activeOrderId)} users={users} currentUser={currentUser} isManager={isManager} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onDelete={deleteOrder} />
                                     )}
                                 </div>
                             )}
 
-                            {/* SHOPPING LIST (Manager Only) */}
                             {view === 'shopping' && isManager && (
                                 <div className="animate-in space-y-6">
-                                    <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
-                                        <div className="relative z-10">
-                                            <h2 className="text-3xl font-bold flex items-center gap-2"><ShoppingCart /> Lista Spesa</h2>
-                                            <p className="text-emerald-100 text-sm mt-1">
-                                                {shoppingList.filter(g => !g.allBought).length} prodotti da acquistare
-                                            </p>
-                                        </div>
-                                    </div>
-
+                                    <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl"><h2 className="text-3xl font-bold flex items-center gap-2"><ShoppingCart /> Lista Spesa</h2><p className="text-emerald-100 text-sm mt-1">{shoppingList.filter(g => !g.allBought).length} prodotti da acquistare</p></div>
                                     <div className="space-y-4">
-                                        {shoppingList.length === 0 && <p className="text-center text-slate-400 py-10">Niente da comprare al momento!</p>}
-                                        
                                         {shoppingList.map((group, idx) => (
-                                            <div key={idx} className={`bg-white border rounded-2xl p-4 shadow-sm transition-all ${group.allBought ? 'border-slate-100 opacity-60' : 'border-emerald-100 ring-1 ring-emerald-50'}`}>
+                                            <div key={idx} className={`bg-white border rounded-2xl p-4 shadow-sm ${group.allBought ? 'opacity-60' : 'border-emerald-100 ring-1 ring-emerald-50'}`}>
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div className="w-full overflow-hidden">
-                                                        <h3 className={`font-bold text-lg truncate ${group.allBought ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-                                                            {group.count}x {group.link ? 'Prodotto da Link' : 'Oggetto Senza Link'}
-                                                        </h3>
-                                                        {group.link && (
-                                                                <a href={group.link} target="_blank" className="flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1.5 rounded-lg font-bold hover:bg-blue-100 w-fit mt-1 truncate max-w-full">
-                                                                <ExternalLink size={12} /> {group.link}
-                                                            </a>
-                                                        )}
+                                                        <h3 className="font-bold text-lg truncate">{group.count}x {group.link ? 'Prodotto' : 'Oggetto'}</h3>
+                                                        {group.link && <a href={group.link} target="_blank" className="flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1.5 rounded-lg font-bold w-fit mt-1 truncate"><ExternalLink size={12} /> {group.link}</a>}
                                                     </div>
                                                 </div>
-
                                                 <div className="space-y-2">
                                                     {group.items.map(item => (
-                                                        <div key={item.id} className="flex flex-col bg-slate-50 p-2 rounded-lg text-sm border border-slate-100">
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-semibold text-slate-700">{item.person}</span>
-                                                                    <span className="text-xs text-slate-500">{item.liquidMl}ml • {item.nicotineMl} nic • {item.vapeType}</span>
-                                                                </div>
-                                                                
-                                                                <button 
-                                                                    onClick={() => toggleBoughtStatus(item.orderId, item.id)}
-                                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                                                        item.bought 
-                                                                        ? 'bg-emerald-100 text-emerald-700' 
-                                                                        : 'bg-white border border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-600'
-                                                                    }`}
-                                                                >
-                                                                    {item.bought ? <CheckSquare size={14}/> : <Square size={14}/>}
-                                                                    {item.bought ? 'PRESO' : 'DA PRENDERE'}
-                                                                </button>
+                                                        <div key={item.id} className="flex flex-col bg-slate-50 p-2 rounded-lg text-sm border">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="font-semibold text-slate-700">{item.person} <span className="text-xs font-normal text-slate-500">{item.liquidMl}ml • {item.nicotineMl}</span></span>
+                                                                <button onClick={() => toggleBoughtStatus(item.orderId, item.id)} className="flex items-center gap-2 px-3 py-1 bg-white border rounded-lg text-xs font-bold">{item.bought ? <CheckSquare size={14}/> : <Square size={14}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}</button>
                                                             </div>
-                                                            {item.otherItems && (
-                                                                <div className="mt-1 pt-1 border-t border-slate-200 text-xs text-slate-600 flex gap-1">
-                                                                    <ShoppingBasket size={12} className="text-orange-400 mt-0.5" /> 
-                                                                    <span>Altro: {item.otherItems}</span>
-                                                                </div>
-                                                            )}
+                                                            {item.otherItems && <div className="text-xs text-orange-500 flex gap-1"><ShoppingBasket size={12}/> {item.otherItems}</div>}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -600,82 +467,43 @@
                                 </div>
                             )}
 
-                            {/* LOGISTICA (Manager Only) */}
                             {view === 'logistics' && isManager && (
                                 <div className="animate-in space-y-6">
                                     <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
-                                        <div className="relative z-10">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">Totale Crediti</p>
-                                                    <h2 className="text-4xl font-bold text-emerald-400">€{managerStats.totalCredits.toFixed(2)}</h2>
-                                                </div>
-                                                <button 
-                                                    onClick={downloadExcel}
-                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition"
-                                                >
-                                                    <FileSpreadsheet size={16} /> Scarica Excel
-                                                </button>
-                                            </div>
-                                            <p className="text-xs text-slate-500 mt-2">Somma di tutti gli ordini attivi non pagati</p>
+                                        <div className="relative z-10 flex justify-between items-start">
+                                            <div><p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">Totale Crediti</p><h2 className="text-4xl font-bold text-emerald-400">€{managerStats.totalCredits.toFixed(2)}</h2></div>
+                                            <button onClick={downloadExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><FileSpreadsheet size={16} /> Excel</button>
                                         </div>
-                                        <Wallet className="absolute -right-6 -bottom-10 text-slate-800 w-48 h-48 opacity-50" />
                                     </div>
-
                                     <div className="space-y-6">
                                         {Object.entries(logisticsData).sort(([,a], [,b]) => b.totalDebt - a.totalDebt).map(([name, data]) => (
-                                            <div key={name} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-                                                <div className="bg-slate-50 p-4 border-b border-slate-100 flex justify-between items-center">
+                                            <div key={name} className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+                                                <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold shadow-sm">{name.charAt(0)}</div>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <h3 className="font-bold text-slate-800">{name}</h3>
-                                                                {paymentRequests[name] && <BellRing size={14} className="text-orange-500 animate-pulse" />}
-                                                            </div>
-                                                            <p className="text-xs text-slate-400">{data.items.length} articoli totali</p>
-                                                        </div>
+                                                        <div className="w-10 h-10 bg-white border rounded-full flex items-center justify-center font-bold text-slate-600">{name.charAt(0)}</div>
+                                                        <div><h3 className="font-bold text-slate-800">{name}</h3><p className="text-xs text-slate-400">{data.items.length} articoli</p></div>
                                                     </div>
                                                     <div className="text-right">
-                                                        <p className={`font-mono font-bold text-lg ${data.totalDebt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                            {data.totalDebt > 0 ? `-€${data.totalDebt.toFixed(2)}` : '€0.00'}
-                                                        </p>
-                                                        <button 
-                                                            onClick={() => togglePaymentRequest(name)}
-                                                            className={`text-[10px] font-bold px-2 py-1 rounded-full mt-1 flex items-center gap-1 ml-auto transition ${paymentRequests[name] ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
-                                                        >
-                                                            <Bell size={10} /> {paymentRequests[name] ? 'RICHIESTO' : 'RICHIEDI'}
-                                                        </button>
+                                                        <p className={`font-mono font-bold text-lg ${data.totalDebt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>{data.totalDebt > 0 ? `-€${data.totalDebt.toFixed(2)}` : '€0.00'}</p>
+                                                        <div className="flex gap-1 justify-end mt-1">
+                                                            <button onClick={() => togglePaymentRequest(name)} className={`p-1.5 rounded-full transition ${paymentRequests[name] ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}><Bell size={14} /></button>
+                                                            <button onClick={() => sendWhatsappLogistics(name, data)} className="p-1.5 rounded-full bg-emerald-100 text-emerald-600"><MessageCircle size={14} /></button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                
-                                                {/* Items List with Price Edit */}
-                                                <div className="divide-y divide-slate-50">
+                                                <div className="divide-y">
                                                     {data.items.map(item => (
-                                                        <div key={item.id} className="p-3 text-sm flex items-center justify-between hover:bg-slate-50">
+                                                        <div key={item.id} className="p-3 text-sm flex justify-between items-center hover:bg-slate-50">
                                                             <div className="overflow-hidden pr-2">
-                                                                <p className="font-medium text-slate-700 truncate">{item.link || item.otherItems}</p>
-                                                                <p className="text-[10px] text-slate-400">{item.orderDate} • {item.liquidMl}ml/{item.nicotineMl}nic</p>
+                                                                <p className="font-medium truncate">{item.link || item.otherItems}</p>
+                                                                <p className="text-[10px] text-slate-400">{item.orderDate}</p>
                                                             </div>
                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                <span className="text-slate-400 text-xs">€</span>
-                                                                <input 
-                                                                    type="number" 
-                                                                    step="0.01"
-                                                                    className="w-16 bg-white border border-slate-200 rounded px-1 py-0.5 text-right font-mono text-sm focus:border-blue-500 focus:outline-none"
-                                                                    value={item.price}
-                                                                    onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)}
-                                                                />
-                                                                <button 
-                                                                    onClick={() => togglePaidStatus(item.orderId, item.id)}
-                                                                    className={`p-1 rounded-full border ${item.paid ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-slate-300 hover:border-emerald-500'}`}
-                                                                >
-                                                                    <Check size={12} />
-                                                                </button>
+                                                                <input type="number" step="0.01" className="w-16 bg-white border rounded px-1 py-0.5 text-right font-mono" value={item.price} onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} />
+                                                                <button onClick={() => togglePaidStatus(item.orderId, item.id)} className={`p-1 rounded-full border ${item.paid ? 'bg-emerald-500 text-white border-emerald-500' : 'text-slate-300'}`}><Check size={12} /></button>
                                                             </div>
                                                         </div>
                                                     ))}
-                                                    {data.items.length === 0 && <p className="p-4 text-center text-xs text-slate-400">Nessun ordine attivo</p>}
                                                 </div>
                                             </div>
                                         ))}
@@ -684,9 +512,8 @@
                             )}
                         </main>
 
-                        {/* BOTTOM NAV (MOBILE ONLY) */}
                         {!activeOrderId && (
-                            <nav className="bg-white border-t border-slate-200 p-2 md:hidden fixed bottom-0 left-0 right-0 flex justify-between px-6 z-30 pb-safe">
+                            <nav className="bg-white border-t p-2 md:hidden fixed bottom-0 left-0 right-0 z-30 pb-safe flex justify-center gap-8">
                                 <NavButton icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
                                 {!isManager && <NavButton icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
                                 {isManager && <NavButton icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
@@ -699,21 +526,18 @@
         };
 
         const NavButton = ({ icon: Icon, label, active, onClick }) => (
-            <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors ${active ? 'text-blue-600' : 'text-slate-400'}`}>
-                <Icon size={22} className={active ? "fill-blue-100" : ""} />
-                <span className="text-[10px] font-medium">{label}</span>
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-blue-600' : 'text-slate-400'}`}>
+                <Icon size={22} className={active ? "fill-blue-100" : ""} /><span className="text-[10px] font-medium">{label}</span>
             </button>
         );
 
         const NavButtonDesktop = ({ icon: Icon, label, active, onClick }) => (
             <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
-                <Icon size={18} />
-                <span>{label}</span>
+                <Icon size={18} /><span>{label}</span>
             </button>
         );
 
-        // --- SUB-COMPONENT: ORDER DETAIL ---
-        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onTogglePaid, onDelete }) => {
+        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete }) => {
             const [person, setPerson] = useState(currentUser || users[0]);
             const [link, setLink] = useState('');
             const [liquidMl, setLiquidMl] = useState('');
@@ -721,150 +545,81 @@
             const [vapeType, setVapeType] = useState('Guanciale');
             const [otherItems, setOtherItems] = useState('');
             
-            // Filter items: if Manager -> show all. If Guest -> show only theirs.
-            const visibleItems = isManager 
-                ? order.items 
-                : order.items.filter(i => i.person === currentUser);
+            // PRIVACY FILTER:
+            // Manager sees ALL items.
+            // Guest sees ONLY their items.
+            const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
 
             const handleSubmit = (e) => {
                 e.preventDefault();
-                if (!link.trim() && !otherItems.trim()) {
-                    alert("Inserisci almeno un link o un altro acquisto.");
-                    return;
-                }
-                
-                onAdd(order.id, { 
-                    person, 
-                    link, 
-                    aroma: '', 
-                    liquidMl, 
-                    nicotineMl, 
-                    vapeType, 
-                    otherItems,
-                    price: 0 // Price is 0 as per request
-                });
-                
+                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
+                onAdd(order.id, { person, link, aroma: '', liquidMl, nicotineMl, vapeType, otherItems, price: 0 });
                 setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems('');
             };
 
+            const sendWhatsapp = (pName, items) => {
+                const manualTotal = prompt(`Inserisci totale da richiedere a ${pName}:`);
+                if (manualTotal === null) return;
+                const msg = `Ciao ${pName}, riepilogo ordine:\n\n` + items.map(i => `- ${i.link ? 'Prodotto' : i.otherItems}`).join('\n') + `\n\n*Totale: €${manualTotal}*`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+            };
+
+            // Grouping for Manager View
+            const itemsByPerson = isManager 
+                ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
+                : { [currentUser]: visibleItems };
+
             return (
                 <div className="pb-20 animate-in">
-                    <div className="flex items-center justify-between mb-4">
-                        <button onClick={onBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full"><ArrowLeft /></button>
-                        <div className="flex gap-2">
-                             {/* Delete only if Manager */}
-                            {isManager && <button onClick={() => onDelete(order.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-full"><Trash2 /></button>}
-                        </div>
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft /></button>
+                        {isManager && <button onClick={() => onDelete(order.id)} className="p-2 text-red-500 rounded-full hover:bg-red-50"><Trash2 /></button>}
                     </div>
+                    <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
                     
-                    <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg mb-6">
-                        <h2 className="text-xl font-bold">{order.title}</h2>
-                        <p className="text-slate-400 text-sm mt-1">{order.date}</p>
-                    </div>
-                    
-                    {/* MODULO INSERIMENTO - Always visible to allow adding items, but pre-filled for user */}
-                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl mb-8">
+                    {/* Add Form (Visible to Guest to add items, Manager can add for anyone) */}
+                    <div className="bg-slate-50 border p-4 rounded-2xl mb-8">
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                            
-                            {/* 1. UTENTE (NO PREZZO) */}
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><Users size={10} /> Chi</label>
-                                <select 
-                                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-medium"
-                                    value={person}
-                                    onChange={e => setPerson(e.target.value)}
-                                    disabled={!isManager} // Lock to current user if not manager
-                                >
-                                    {users.map(u => <option key={u} value={u}>{u}</option>)}
-                                </select>
+                            <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
+                                <select className="w-full px-3 py-2.5 bg-white border rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
                             </div>
-
-                            {/* 2. LINK (No Name) */}
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><LinkIcon size={10} /> Link Prodotto</label>
-                                <input 
-                                    type="url" 
-                                    placeholder="Incolla Link qui..." 
-                                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-blue-600" 
-                                    value={link} 
-                                    onChange={e => setLink(e.target.value)} 
-                                />
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Link</label>
+                                <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white border rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
                             </div>
-
-                            {/* 3. SPECIFICHE */}
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><Beaker size={10} /> Specifiche</label>
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <input type="text" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">ml</span>
-                                    </div>
-                                    <div className="relative flex-1">
-                                        <input type="text" placeholder="ml Nic" className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">nic</span>
-                                    </div>
-                                </div>
-                                <div className="flex bg-white rounded-xl border border-slate-200 p-1">
-                                    {['Guanciale', 'Polmonare'].map(t => (
-                                        <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 transition-all ${vapeType === t ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{t}</button>
-                                    ))}
-                                </div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Specifiche</label>
+                                <div className="flex gap-2"><div className="relative flex-1"><input type="text" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white border rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="text" placeholder="ml Nic" className="w-full px-3 py-2.5 bg-white border rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
+                                <div className="flex bg-white rounded-xl border p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>{t}</button>)}</div>
                             </div>
-
-                            {/* 4. ALTRI ACQUISTI */}
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 flex items-center gap-1"><ShoppingBasket size={10} /> Altri acquisti</label>
-                                <textarea rows="2" placeholder="Es. Cotone, Resistenze..." className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} />
-                            </div>
-
-                            <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center justify-center font-bold gap-2 mt-2"><Plus size={20} /> AGGIUNGI</button>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro</label><textarea rows="2" placeholder="Es. Cotone..." className="w-full px-4 py-2.5 bg-white border rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} /></div>
+                            <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
                         </form>
                     </div>
 
-                    {/* LISTA OGGETTI (Filtered) */}
                     <div className="space-y-4">
-                        {Object.entries(isManager ? order.items.reduce((acc, item) => {
-                                if(!acc[item.person]) acc[item.person] = [];
-                                acc[item.person].push(item);
-                                return acc;
-                            }, {}) : { [currentUser]: visibleItems }).map(([pName, pItems]) => (
-                                <div key={pName} className="border-b border-slate-200 pb-4 last:border-0">
+                        {Object.entries(itemsByPerson).map(([pName, pItems]) => (
+                            <div key={pName} className="border-b pb-4 last:border-0">
+                                {isManager && (
                                     <div className="flex justify-between items-center mb-2 px-1">
                                         <h3 className="font-bold text-slate-700">{pName}</h3>
+                                        <button onClick={() => sendWhatsapp(pName, pItems)} className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold"><Send size={10} /> INVIA RIEPILOGO</button>
                                     </div>
-                                    <div className="space-y-2">
-                                        {pItems.slice().reverse().map((item) => (
-                                            <div key={item.id} className={`p-4 rounded-xl border flex justify-between items-center ${item.paid ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-100'}`}>
-                                                <div className="flex items-center gap-3 overflow-hidden">
-                                                    <button onClick={() => onTogglePaid(order.id, item.id)} disabled={!isManager} className={`w-6 h-6 rounded-full border flex items-center justify-center ${item.paid ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300'}`}><Check size={14} /></button>
-                                                    <div className="min-w-0">
-                                                        {item.link ? (
-                                                            <a href={item.link} target="_blank" className="font-bold text-blue-600 truncate block hover:underline flex items-center gap-1">
-                                                                <LinkIcon size={12} /> Link Prodotto
-                                                            </a>
-                                                        ) : (
-                                                            <p className="font-bold text-slate-800">Oggetto manuale</p>
-                                                        )}
-                                                        
-                                                        <p className="text-xs text-slate-500 mt-0.5">{item.liquidMl && `${item.liquidMl}ml`}{item.nicotineMl && ` • ${item.nicotineMl}nic`} {item.vapeType && `• ${item.vapeType}`}</p>
-                                                        {item.otherItems && (
-                                                            <p className="text-xs text-orange-500 font-medium mt-1 flex items-center gap-1">
-                                                                <ShoppingBasket size={10} /> {item.otherItems}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-3 pl-2">
-                                                    {(isManager || item.person === currentUser) && (
-                                                        <button onClick={() => onRemove(order.id, item.id)} className="text-slate-300 hover:text-red-500"><X size={18} /></button>
-                                                    )}
+                                )}
+                                <div className="space-y-2">
+                                    {pItems.slice().reverse().map((item) => (
+                                        <div key={item.id} className="p-4 rounded-xl border flex justify-between items-center bg-white">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="min-w-0">
+                                                    {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800">Oggetto manuale</p>}
+                                                    <p className="text-xs text-slate-500 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                                    {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
+                                            {(isManager || item.person === currentUser) && <button onClick={() => onRemove(order.id, item.id)} className="text-slate-300 hover:text-red-500"><X size={18} /></button>}
+                                        </div>
+                                    ))}
                                 </div>
-                            ))
-                        }
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
