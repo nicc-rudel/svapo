@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Svapo Manager</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Map per gestire i moduli React dal browser -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+        }
+    }
+    </script>
+
+    <!-- Babel per compilare JSX nel browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
+            ShoppingBag, Wallet, Link as LinkIcon, Wind, 
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square
+        } from 'lucide-react';
+
+        const OrderManager = () => {
+            // --- STATE ---
+            
+            const [users, setUsers] = useState(() => {
+                const saved = localStorage.getItem('vapeUsers');
+                return saved ? JSON.parse(saved) : ['Gestore', 'Marco', 'Giulia'];
+            });
+
+            const [orders, setOrders] = useState(() => {
+                const saved = localStorage.getItem('vapeOrders');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [currentUser, setCurrentUser] = useState(null);
+            
+            // Views: 'dashboard', 'orders', 'shopping', 'wallet'
+            const [view, setView] = useState('dashboard'); 
+            const [activeOrderId, setActiveOrderId] = useState(null);
+            
+            const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+            const [newOrderTitle, setNewOrderTitle] = useState('');
+            const [newUserName, setNewUserName] = useState('');
+            const [isAddingUser, setIsAddingUser] = useState(false);
+
+            // --- PERSISTENCE ---
+            useEffect(() => { localStorage.setItem('vapeOrders', JSON.stringify(orders)); }, [orders]);
+            useEffect(() => { localStorage.setItem('vapeUsers', JSON.stringify(users)); }, [users]);
+
+            // --- CALCULATIONS ---
+
+            const userStats = useMemo(() => {
+                if (!currentUser) return null;
+                const myItems = orders.flatMap(o => o.items.map(i => ({...i, date: o.date, orderTitle: o.title})))
+                                    .filter(i => i.person === currentUser);
+                const totalSpent = myItems.reduce((acc, i) => acc + (parseFloat(i.price) || 0), 0);
+                const totalDebt = myItems.filter(i => !i.paid).reduce((acc, i) => acc + (parseFloat(i.price) || 0), 0);
+                const spendingByMonth = myItems.reduce((acc, item) => {
+                    const parts = item.date.split('/');
+                    if(parts.length < 3) return acc;
+                    const key = `${parts[1]}/${parts[2]}`;
+                    acc[key] = (acc[key] || 0) + (parseFloat(item.price) || 0);
+                    return acc;
+                }, {});
+                return { totalSpent, totalDebt, myItems, spendingByMonth };
+            }, [orders, currentUser]);
+
+            const globalDebts = useMemo(() => {
+                const debts = {};
+                users.forEach(u => debts[u] = 0);
+                orders.forEach(order => {
+                    order.items.forEach(item => {
+                        if (!item.paid) {
+                            debts[item.person] = (debts[item.person] || 0) + (parseFloat(item.price) || 0);
+                        }
+                    });
+                });
+                return debts;
+            }, [orders, users]);
+
+            // Group items for Shopping List
+            const shoppingList = useMemo(() => {
+                // Flatten all items from active orders
+                const allItems = orders.flatMap(order => 
+                    order.items.map(item => ({ ...item, orderId: order.id, orderTitle: order.title }))
+                );
+
+                // Group by normalized Aroma name to combine quantities
+                const grouped = {};
+                allItems.forEach(item => {
+                    const key = item.aroma.toLowerCase().trim();
+                    if (!grouped[key]) {
+                        grouped[key] = {
+                            name: item.aroma,
+                            count: 0,
+                            items: [],
+                            links: new Set(),
+                            allBought: true // Start true, becomes false if any item is not bought
+                        };
+                    }
+                    grouped[key].count += 1;
+                    grouped[key].items.push(item);
+                    if (item.link) grouped[key].links.add(item.link);
+                    if (!item.bought) grouped[key].allBought = false;
+                });
+
+                return Object.values(grouped).sort((a, b) => {
+                    if (a.allBought === b.allBought) return 0;
+                    return a.allBought ? 1 : -1; // Move bought items to bottom
+                });
+            }, [orders]);
+
+
+            // --- ACTIONS ---
+
+            const handleLogin = (user) => { setCurrentUser(user); setView('dashboard'); };
+
+            const addUser = (e) => {
+                e.preventDefault();
+                if(newUserName.trim() && !users.includes(newUserName.trim())) {
+                    setUsers([...users, newUserName.trim()]);
+                    setNewUserName('');
+                    setIsAddingUser(false);
+                }
+            };
+
+            const createOrder = (e) => {
+                e.preventDefault();
+                if (!newOrderTitle.trim()) return;
+                setOrders([{
+                    id: Date.now(),
+                    title: newOrderTitle,
+                    date: new Date().toLocaleDateString('it-IT'),
+                    items: [],
+                    status: 'active' 
+                }, ...orders]);
+                setNewOrderTitle('');
+                setIsCreatingOrder(false);
+            };
+
+            const addItemToOrder = (orderId, item) => {
+                setOrders(orders.map(order => {
+                    if (order.id === orderId) {
+                        // Added 'bought: false' property
+                        return { ...order, items: [...order.items, { ...item, id: Date.now(), paid: false, bought: false }] };
+                    }
+                    return order;
+                }));
+            };
+
+            const removeItemFromOrder = (orderId, itemId) => {
+                setOrders(orders.map(order => {
+                    if (order.id === orderId) return { ...order, items: order.items.filter(i => i.id !== itemId) };
+                    return order;
+                }));
+            };
+
+            const togglePaidStatus = (orderId, itemId) => {
+                setOrders(orders.map(order => {
+                    if (order.id === orderId) {
+                        const updatedItems = order.items.map(item => item.id === itemId ? { ...item, paid: !item.paid } : item);
+                        return { ...order, items: updatedItems };
+                    }
+                    return order;
+                }));
+            };
+
+            const toggleBoughtStatus = (orderId, itemId) => {
+                setOrders(orders.map(order => {
+                    if (order.id === orderId) {
+                        const updatedItems = order.items.map(item => 
+                            item.id === itemId ? { ...item, bought: !item.bought } : item
+                        );
+                        return { ...order, items: updatedItems };
+                    }
+                    return order;
+                }));
+            };
+
+            const deleteOrder = (id) => {
+                if (confirm('Eliminare ordine?')) {
+                    setOrders(orders.filter(o => o.id !== id));
+                    setActiveOrderId(null);
+                    setView('orders');
+                }
+            };
+
+            // --- RENDER HELPERS ---
+
+            if (!currentUser) {
+                return (
+                    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+                        <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
+                            <div className="text-center mb-8">
+                                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+                                    <Wind size={32} />
+                                </div>
+                                <h1 className="text-2xl font-bold text-slate-800">Svapo Manager</h1>
+                                <p className="text-slate-500">Chi sta usando l'app?</p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                {users.map(u => (
+                                    <button key={u} onClick={() => handleLogin(u)} className="p-4 rounded-xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-slate-700 flex flex-col items-center gap-2">
+                                        <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold">{u.charAt(0).toUpperCase()}</div>
+                                        {u}
+                                    </button>
+                                ))}
+                                <button onClick={() => setIsAddingUser(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-all flex flex-col items-center gap-2 justify-center">
+                                    <Plus size={24} /> <span className="text-sm">Nuovo</span>
+                                </button>
+                            </div>
+                            {isAddingUser && (
+                                <form onSubmit={addUser} className="flex gap-2 animate-in">
+                                    <input autoFocus type="text" placeholder="Nome..." className="flex-1 bg-slate-100 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" value={newUserName} onChange={e => setNewUserName(e.target.value)} />
+                                    <button type="submit" className="bg-blue-600 text-white p-3 rounded-xl font-bold">Ok</button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-24 md:pb-0">
+                    <div className="max-w-4xl mx-auto min-h-screen bg-white shadow-xl flex flex-col border-x border-slate-100">
+                        
+                        {/* HEADER */}
+                        <header className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-20">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-200">
+                                    {currentUser.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">Benvenuto</p>
+                                    <h1 className="text-lg font-bold text-slate-900 leading-none">{currentUser}</h1>
+                                </div>
+                            </div>
+                            <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-red-50 hover:text-red-500 transition-colors">
+                                <LogOut size={18} />
+                            </button>
+                        </header>
+
+                        {/* CONTENT AREA */}
+                        <main className="flex-1 overflow-y-auto p-4">
+                            
+                            {/* DASHBOARD */}
+                            {view === 'dashboard' && (
+                                <div className="space-y-6 animate-in">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-5 rounded-2xl text-white shadow-lg shadow-blue-200">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <Wallet className="opacity-80" />
+                                                <span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Totale</span>
+                                            </div>
+                                            <p className="text-sm opacity-80">Spesa Storica</p>
+                                            <p className="text-3xl font-bold">€{userStats.totalSpent.toFixed(2)}</p>
+                                        </div>
+                                        <div className={`p-5 rounded-2xl border-2 ${userStats.totalDebt > 0 ? 'bg-red-50 border-red-100 text-red-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
+                                            <div className="flex justify-between items-start mb-4">
+                                                <DollarSign />
+                                                <span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50">Stato</span>
+                                            </div>
+                                            <p className="text-sm opacity-80">Devi dare ancora</p>
+                                            <p className="text-3xl font-bold">€{userStats.totalDebt.toFixed(2)}</p>
+                                        </div>
+                                    </div>
+                                    {/* Charts & History omitted for brevity, same as before */}
+                                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><TrendingUp size={18} className="text-blue-500"/> Andamento Spesa</h3>
+                                        <div className="flex items-end gap-3 h-32 pt-4 overflow-x-auto no-scrollbar">
+                                            {Object.keys(userStats.spendingByMonth).length === 0 && <p className="text-sm text-slate-400 w-full text-center self-center">Nessun dato.</p>}
+                                            {Object.entries(userStats.spendingByMonth).map(([month, amount]) => {
+                                                const max = Math.max(...Object.values(userStats.spendingByMonth));
+                                                const heightPct = (amount / max) * 100;
+                                                return (
+                                                    <div key={month} className="flex flex-col items-center gap-2 min-w-[50px]">
+                                                        <div className="w-full bg-blue-500 rounded-t-lg transition-all relative group" style={{ height: `${Math.max(heightPct, 10)}%` }}></div>
+                                                        <span className="text-xs font-medium text-slate-500">{month}</span>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ORDERS LIST */}
+                            {view === 'orders' && (
+                                <div className="space-y-4 animate-in">
+                                    {!activeOrderId ? (
+                                        <>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h2 className="text-xl font-bold text-slate-800">Ordini Gruppo</h2>
+                                                <button onClick={() => setIsCreatingOrder(true)} className="bg-slate-900 text-white p-2 rounded-xl hover:bg-slate-800 transition shadow-lg shadow-slate-200"><Plus size={24} /></button>
+                                            </div>
+                                            {isCreatingOrder && (
+                                                <form onSubmit={createOrder} className="bg-slate-50 border border-slate-200 p-4 rounded-2xl mb-4 animate-in">
+                                                    <input autoFocus type="text" placeholder="Nome ordine..." className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3" value={newOrderTitle} onChange={(e) => setNewOrderTitle(e.target.value)} />
+                                                    <div className="flex gap-2">
+                                                        <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-xl font-medium">Crea</button>
+                                                        <button type="button" onClick={() => setIsCreatingOrder(false)} className="px-4 py-2 bg-slate-200 text-slate-600 rounded-xl">Annulla</button>
+                                                    </div>
+                                                </form>
+                                            )}
+                                            <div className="space-y-3">
+                                                {orders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
+                                                {orders.map(order => {
+                                                    const total = order.items.reduce((acc, i) => acc + (parseFloat(i.price)||0), 0);
+                                                    return (
+                                                        <div key={order.id} onClick={() => setActiveOrderId(order.id)} className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm hover:border-blue-300 transition-all cursor-pointer relative">
+                                                            <div className="flex justify-between items-start">
+                                                                <div><h3 className="font-bold text-slate-900">{order.title}</h3><p className="text-xs text-slate-500">{order.date}</p></div>
+                                                                <span className="font-mono font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-lg">€{total.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="mt-3 flex items-center gap-2">
+                                                                <div className="flex -space-x-2">
+                                                                    {[...new Set(order.items.map(i => i.person))].slice(0, 4).map((p, idx) => (
+                                                                        <div key={idx} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">{p.charAt(0)}</div>
+                                                                    ))}
+                                                                </div>
+                                                                <span className="text-xs text-slate-400 ml-1">{order.items.length} articoli</span>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <OrderDetail order={orders.find(o => o.id === activeOrderId)} users={users} currentUser={currentUser} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onTogglePaid={togglePaidStatus} onDelete={deleteOrder} />
+                                    )}
+                                </div>
+                            )}
+
+                            {/* NEW: SHOPPING LIST */}
+                            {view === 'shopping' && (
+                                <div className="animate-in space-y-6">
+                                    <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
+                                        <div className="relative z-10">
+                                            <h2 className="text-3xl font-bold flex items-center gap-2"><ShoppingCart /> Lista Spesa</h2>
+                                            <p className="text-emerald-100 text-sm mt-1">
+                                                {shoppingList.filter(g => !g.allBought).length} articoli da prendere
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {shoppingList.length === 0 && <p className="text-center text-slate-400 py-10">Niente da comprare al momento!</p>}
+                                        
+                                        {shoppingList.map((group, idx) => (
+                                            <div key={idx} className={`bg-white border rounded-2xl p-4 shadow-sm transition-all ${group.allBought ? 'border-slate-100 opacity-60' : 'border-emerald-100 ring-1 ring-emerald-50'}`}>
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div>
+                                                        <h3 className={`font-bold text-lg ${group.allBought ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                                            {group.count}x {group.name}
+                                                        </h3>
+                                                        <div className="flex flex-wrap gap-2 mt-2">
+                                                            {Array.from(group.links).map((link, i) => (
+                                                                <a key={i} href={link} target="_blank" className="flex items-center gap-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold hover:bg-blue-100">
+                                                                    <ExternalLink size={10} /> Link {i+1}
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    {group.items.map(item => (
+                                                        <div key={item.id} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg text-sm">
+                                                            <div className="flex flex-col">
+                                                                <span className="font-semibold text-slate-700">{item.person}</span>
+                                                                <span className="text-xs text-slate-500">{item.liquidMl}ml • {item.nicotineMl} nic • {item.vapeType}</span>
+                                                            </div>
+                                                            
+                                                            <button 
+                                                                onClick={() => toggleBoughtStatus(item.orderId, item.id)}
+                                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                                    item.bought 
+                                                                    ? 'bg-emerald-100 text-emerald-700' 
+                                                                    : 'bg-white border border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-600'
+                                                                }`}
+                                                            >
+                                                                {item.bought ? <CheckSquare size={14}/> : <Square size={14}/>}
+                                                                {item.bought ? 'PRESO' : 'DA PRENDERE'}
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* WALLET */}
+                            {view === 'wallet' && (
+                                <div className="animate-in space-y-6">
+                                    <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
+                                        <div className="relative z-10">
+                                            <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">Totale da Incassare</p>
+                                            <h2 className="text-4xl font-bold text-emerald-400">€{Object.values(globalDebts).reduce((a, b) => a + b, 0).toFixed(2)}</h2>
+                                        </div>
+                                        <Wallet className="absolute -right-6 -bottom-10 text-slate-800 w-48 h-48 opacity-50" />
+                                    </div>
+                                    <div className="space-y-3">
+                                        {Object.entries(globalDebts).sort(([,a], [,b]) => b - a).map(([name, amount]) => (
+                                            <div key={name} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 font-bold">{name.charAt(0)}</div>
+                                                    <span className="font-bold text-slate-700">{name}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className={`font-mono font-bold text-lg ${amount > 0 ? 'text-red-500' : 'text-emerald-500'}`}>{amount > 0 ? `-€${amount.toFixed(2)}` : '€0.00'}</p>
+                                                    <p className="text-[10px] text-slate-400 uppercase font-bold">{amount > 0 ? 'Deve dare' : 'In pari'}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+
+                        {/* BOTTOM NAV */}
+                        {!activeOrderId && (
+                            <nav className="bg-white border-t border-slate-200 p-2 md:hidden fixed bottom-0 left-0 right-0 flex justify-between px-6 z-30 pb-safe">
+                                <NavButton icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                                <NavButton icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />
+                                <NavButton icon={ShoppingCart} label="Lista Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />
+                                <NavButton icon={Wallet} label="Cassa" active={view === 'wallet'} onClick={() => setView('wallet')} />
+                            </nav>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const NavButton = ({ icon: Icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors ${active ? 'text-blue-600' : 'text-slate-400'}`}>
+                <Icon size={22} className={active ? "fill-blue-100" : ""} />
+                <span className="text-[10px] font-medium">{label}</span>
+            </button>
+        );
+
+        // --- SUB-COMPONENT: ORDER DETAIL ---
+        const OrderDetail = ({ order, users, currentUser, onBack, onAdd, onRemove, onTogglePaid, onDelete }) => {
+            const [person, setPerson] = useState(currentUser || users[0]);
+            const [aroma, setAroma] = useState('');
+            const [link, setLink] = useState('');
+            const [liquidMl, setLiquidMl] = useState('');
+            const [nicotineMl, setNicotineMl] = useState('');
+            const [vapeType, setVapeType] = useState('Guanciale');
+            const [price, setPrice] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!aroma.trim()) return;
+                onAdd(order.id, { person, aroma, link, liquidMl, nicotineMl, vapeType, price: parseFloat(price) || 0 });
+                setAroma(''); setLink(''); setLiquidMl(''); setNicotineMl(''); setPrice('');
+            };
+
+            return (
+                <div className="pb-20 animate-in">
+                    <div className="flex items-center justify-between mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 hover:bg-slate-100 rounded-full"><ArrowLeft /></button>
+                        <div className="flex gap-2">
+                            <button onClick={() => {
+                                const text = `💨 *${order.title}*\n` + order.items.map(i => `${i.person}: ${i.aroma} (${i.paid ? 'Pagato' : 'No'})`).join('\n');
+                                navigator.clipboard.writeText(text); alert("Copiato!");
+                            }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-full"><Share2 /></button>
+                            <button onClick={() => onDelete(order.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-full"><Trash2 /></button>
+                        </div>
+                    </div>
+                    <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg mb-6">
+                        <h2 className="text-xl font-bold">{order.title}</h2>
+                        <p className="text-slate-400 text-sm">{order.date}</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl mb-8">
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                            <div className="flex gap-3">
+                                <select className="flex-1 px-3 py-2 bg-white border rounded-xl" value={person} onChange={e => setPerson(e.target.value)}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                                <input type="number" step="0.01" placeholder="€" className="w-1/3 px-3 py-2 bg-white border rounded-xl" value={price} onChange={e => setPrice(e.target.value)} required />
+                            </div>
+                            <input type="text" placeholder="Aroma..." className="w-full px-3 py-2 bg-white border rounded-xl" value={aroma} onChange={e => setAroma(e.target.value)} required />
+                            <input type="url" placeholder="Link..." className="w-full px-3 py-2 bg-white border rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
+                            <div className="flex gap-2 text-sm"><input type="text" placeholder="ml Liq" className="flex-1 px-3 py-2 bg-white border rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /><input type="text" placeholder="ml Nic" className="flex-1 px-3 py-2 bg-white border rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div>
+                            <div className="flex gap-3 mt-1"><div className="flex bg-white rounded-xl border p-1 flex-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs py-1.5 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>{t}</button>)}</div><button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl shadow-lg"><Plus /></button></div>
+                        </form>
+                    </div>
+                    <div className="space-y-3">
+                        {order.items.slice().reverse().map((item) => (
+                            <div key={item.id} className={`p-4 rounded-xl border flex justify-between items-center ${item.paid ? 'bg-emerald-50 border-emerald-100 opacity-60' : 'bg-white border-slate-100'}`}>
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                    <button onClick={() => onTogglePaid(order.id, item.id)} className={`w-6 h-6 rounded-full border flex items-center justify-center ${item.paid ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300'}`}><Check size={14} /></button>
+                                    <div><p className="font-bold text-slate-800 leading-tight">{item.person} <span className="text-slate-400 font-normal text-xs">• {item.aroma}</span></p></div>
+                                </div>
+                                <div className="flex items-center gap-3"><span className="font-bold">€{item.price.toFixed(2)}</span><button onClick={() => onRemove(order.id, item.id)} className="text-slate-300 hover:text-red-500"><X size={18} /></button></div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<OrderManager />);
+    </script>
+</body>
+</html>
