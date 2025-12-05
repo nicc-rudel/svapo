@@ -47,7 +47,7 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -65,9 +65,15 @@
             appId: "..."
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        // Initialize only if config is valid-ish
+        let app, db, auth;
+        const isConfigured = firebaseConfig.apiKey !== "TUO_API_KEY";
+        
+        if (isConfigured) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        }
         
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'svapo-manager-default';
 
@@ -78,6 +84,7 @@
             const [paymentRequests, setPaymentRequests] = useState({});
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
+            const [connectionError, setConnectionError] = useState(null); // New Error State
             
             // Login State
             const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
@@ -91,6 +98,8 @@
 
             // --- FIREBASE SYNC ---
             useEffect(() => {
+                if (!isConfigured) return;
+
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -100,11 +109,28 @@
                         }
                     } catch (err) {
                         console.error("Auth Error:", err);
+                        setConnectionError(err.message);
                     }
                 };
+                
+                // Timeout di sicurezza
+                const timer = setTimeout(() => {
+                    if (!auth.currentUser) {
+                        setConnectionError("Timeout: La connessione sta impiegando troppo tempo.");
+                    }
+                }, 10000);
+
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, (user) => setFirebaseUser(user));
-                return () => unsubscribe();
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        clearTimeout(timer);
+                        setFirebaseUser(user);
+                    }
+                });
+                return () => {
+                    unsubscribe();
+                    clearTimeout(timer);
+                };
             }, []);
 
             useEffect(() => {
@@ -114,7 +140,8 @@
                     const loadedOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     loadedOrders.sort((a, b) => b.id - a.id);
                     setOrders(loadedOrders);
-                });
+                }, (err) => setConnectionError("Errore lettura ordini: " + err.message));
+
                 const docSettings = doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global');
                 const unsubSettings = onSnapshot(docSettings, (snapshot) => {
                     if (snapshot.exists()) {
@@ -294,6 +321,27 @@
             };
 
             // --- UI ---
+            if (!isConfigured) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-50">
+                        <div className="bg-red-100 p-4 rounded-full text-red-500 mb-4"><CloudLightning size={48} /></div>
+                        <h1 className="text-xl font-bold text-slate-800 mb-2">Configurazione Mancante</h1>
+                        <p className="text-slate-600 mb-4">L'app non è collegata a Firebase. Se stai usando questo file in locale, devi inserire le tue chiavi API nel codice.</p>
+                    </div>
+                );
+            }
+
+            if (connectionError) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-50">
+                        <div className="bg-orange-100 p-4 rounded-full text-orange-500 mb-4"><AlertCircle size={48} /></div>
+                        <h1 className="text-xl font-bold text-slate-800 mb-2">Errore Connessione</h1>
+                        <p className="text-slate-600 mb-4 text-sm font-mono bg-slate-200 p-2 rounded">{connectionError}</p>
+                        <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold">Riprova</button>
+                    </div>
+                );
+            }
+
             if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 animate-pulse">Connessione Cloud...</div>;
 
             if (!currentUser) return (
@@ -418,9 +466,6 @@
                                                 {orders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
                                                 {orders.map(order => {
                                                     const myCount = (order.items || []).filter(i => i.person === currentUser).length;
-                                                    // PRIVACY: Only show orders where user has items or (optionally) show empty orders they can add to.
-                                                    // Request says "ospiti non devono vedere ordini degli altri". But they need to see the container to add their stuff.
-                                                    // Compromise: Show all active orders, but inside they only see theirs.
                                                     return (
                                                         <div key={order.id} onClick={() => setActiveOrderId(order.id)} className="bg-white border p-4 rounded-2xl shadow-sm cursor-pointer">
                                                             <div className="flex justify-between items-start">
@@ -545,9 +590,6 @@
             const [vapeType, setVapeType] = useState('Guanciale');
             const [otherItems, setOtherItems] = useState('');
             
-            // PRIVACY FILTER:
-            // Manager sees ALL items.
-            // Guest sees ONLY their items.
             const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
 
             const handleSubmit = (e) => {
@@ -564,7 +606,6 @@
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
             };
 
-            // Grouping for Manager View
             const itemsByPerson = isManager 
                 ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
                 : { [currentUser]: visibleItems };
@@ -577,7 +618,6 @@
                     </div>
                     <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
                     
-                    {/* Add Form (Visible to Guest to add items, Manager can add for anyone) */}
                     <div className="bg-slate-50 border p-4 rounded-2xl mb-8">
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
