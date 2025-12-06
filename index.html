@@ -286,6 +286,7 @@
                                                     {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
                                                 </div>
                                             </div>
+                                            {/* Stop propagation on delete item button */}
                                             {(isManager || item.person === currentUser) && (
                                                 <button 
                                                     onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
@@ -421,7 +422,16 @@
                                     .filter(i => i.person === currentUser);
                 const totalItems = myItems.length;
                 const pendingItems = myItems.filter(i => !i.paid).length;
-                return { totalItems, pendingItems, myItems };
+                
+                // Calculate total debt (Somma dei prezzi non pagati)
+                const totalDebt = myItems.reduce((acc, item) => {
+                    if (!item.paid) {
+                        return acc + (parseFloat(item.price) || 0);
+                    }
+                    return acc;
+                }, 0);
+
+                return { totalItems, pendingItems, myItems, totalDebt };
             }, [orders, currentUser, isManager]);
 
             const managerStats = useMemo(() => {
@@ -502,6 +512,28 @@
                 }
             };
 
+            // ELIMINAZIONE UTENTE CON MODALE
+            const deleteUser = (userToDelete) => {
+                if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
+                
+                showConfirm(
+                    "Elimina Utente", 
+                    `Sei sicuro di voler eliminare definitivamente l'utente "${userToDelete}"?`, 
+                    async () => {
+                        const newUsersList = users.filter(u => u !== userToDelete);
+                        try {
+                            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                                users: newUsersList 
+                            });
+                        } catch (error) {
+                            showInfo("Errore", error.message);
+                        }
+                    },
+                    true, // isDanger
+                    "Elimina"
+                );
+            };
+
             const createOrder = async () => {
                 const dateStr = new Date().toLocaleDateString('it-IT');
                 const newId = Date.now().toString();
@@ -546,6 +578,7 @@
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
+            // ELIMINAZIONE ORDINE CON MODALE
             const deleteOrder = (orderId) => {
                 showConfirm(
                     "Elimina Ordine", 
@@ -559,6 +592,7 @@
                 );
             };
 
+            // RESET ORDINE CON MODALE
             const resetOrder = (orderId) => {
                 showConfirm(
                     "Reset Ordine",
@@ -571,27 +605,7 @@
                 );
             };
 
-            const deleteUser = (userToDelete) => {
-                if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
-                
-                showConfirm(
-                    "Elimina Utente", 
-                    `Sei sicuro di voler eliminare definitivamente l'utente "${userToDelete}"?`, 
-                    async () => {
-                        const newUsersList = users.filter(u => u !== userToDelete);
-                        try {
-                            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
-                                users: newUsersList 
-                            });
-                        } catch (error) {
-                            showInfo("Errore", error.message);
-                        }
-                    },
-                    true, // isDanger
-                    "Elimina"
-                );
-            };
-
+            // RESET TOTALE APP CON MODALE (SOLO MANAGER)
             const factoryReset = () => {
                 if (!isManager) return;
                 
@@ -786,7 +800,9 @@
                                                 </div>
                                                 <div className={`p-5 rounded-2xl border-2 ${userStats.pendingItems > 0 ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400' : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
                                                     <div className="flex justify-between mb-4"><CheckSquare /><span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50 dark:bg-black/20">Stato</span></div>
-                                                    <p className="text-sm opacity-80">Da Saldare</p><p className="text-3xl font-bold">{userStats.pendingItems}</p>
+                                                    <p className="text-sm opacity-80">Devi dare</p>
+                                                    <p className="text-3xl font-bold">€{userStats.totalDebt.toFixed(2)}</p>
+                                                    <p className="text-xs mt-1 opacity-70">{userStats.pendingItems} articoli da saldare</p>
                                                 </div>
                                             </div>
                                             <div>
