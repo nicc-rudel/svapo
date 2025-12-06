@@ -23,6 +23,9 @@
                             850: '#1e293b',
                             950: '#020617',
                         }
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
                     }
                 }
             }
@@ -68,7 +71,7 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -652,6 +655,7 @@
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
             const [connectionError, setConnectionError] = useState(null); 
+            const [showWelcome, setShowWelcome] = useState(false); // Welcome screen state
             
             // Login State
             const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
@@ -726,6 +730,20 @@
                     unsubscribe();
                     clearTimeout(timer);
                 };
+            }, []);
+
+            // --- AUTO LOGIN CHECK ---
+            useEffect(() => {
+                const savedUser = localStorage.getItem('svapo_last_user');
+                if (savedUser) {
+                    // Show welcome screen briefly
+                    setShowWelcome(true);
+                    setTimeout(() => {
+                        setCurrentUser(savedUser);
+                        setView('dashboard');
+                        setShowWelcome(false);
+                    }, 1500);
+                }
             }, []);
 
             useEffect(() => {
@@ -915,6 +933,8 @@
                 if (user === 'Gestore') {
                     setIsLoggingInAsManager(true); setManagerPassword(''); setLoginError('');
                 } else {
+                    // SAVE USER FOR AUTO-LOGIN
+                    localStorage.setItem('svapo_last_user', user);
                     setCurrentUser(user); setView('dashboard');
                 }
             };
@@ -922,10 +942,17 @@
             const submitManagerLogin = (e) => {
                 e.preventDefault();
                 if (managerPassword === '1234') {
+                    // SAVE MANAGER FOR AUTO-LOGIN
+                    localStorage.setItem('svapo_last_user', 'Gestore');
                     setCurrentUser('Gestore'); setView('dashboard'); setIsLoggingInAsManager(false);
                 } else {
                     setLoginError('Password errata'); setManagerPassword('');
                 }
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('svapo_last_user');
+                setCurrentUser(null);
             };
 
             const addUser = async (e) => {
@@ -1163,6 +1190,17 @@
             if (connectionError) return <div className="p-10 text-center text-red-500">Errore: {connectionError}</div>;
             if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-950 animate-pulse">Connessione Cloud...</div>;
 
+            if (showWelcome && currentUser) return (
+                <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center text-white animate-in fade-in duration-500">
+                    <CloudLightning size={64} className="mb-4 animate-bounce-slow" />
+                    <h1 className="text-3xl font-bold mb-2">Bentornato, {currentUser}!</h1>
+                    <div className="flex items-center gap-2 text-indigo-200">
+                        <Loader2 className="animate-spin" size={20} />
+                        <span>Caricamento Dashboard...</span>
+                    </div>
+                </div>
+            );
+
             if (!currentUser) return (
                 <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative">
                     <ConfirmDialog {...modalConfig} />
@@ -1276,7 +1314,7 @@
                                             </>
                                         )}
                                         
-                                        <button onClick={() => setCurrentUser(null)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-sm font-medium">
+                                        <button onClick={() => { handleLogout(); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-sm font-medium">
                                             <div className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-lg"><LogOut size={18} /></div> Esci
                                         </button>
                                     </div>
@@ -1386,6 +1424,28 @@
                                                                     </div>
                                                                 ))}
                                                             </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* NOTIFICHE PAGAMENTI */}
+                                                    {Object.entries(managerStats.pendingByUser).length > 0 && (
+                                                        <div className="space-y-3">
+                                                            <h3 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2"><BellRing size={18} className="text-orange-500" /> Pagamenti da Confermare</h3>
+                                                            {Object.entries(managerStats.pendingByUser).map(([user, data]) => (
+                                                                <div key={user} className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-2xl flex justify-between items-center shadow-sm">
+                                                                    <div>
+                                                                        <p className="font-bold text-slate-800 dark:text-slate-200">{user}</p>
+                                                                        <p className="text-xs text-orange-600 dark:text-orange-400">Ha segnato come pagati {data.items.length} articoli</p>
+                                                                        <p className="font-bold text-lg text-slate-800 dark:text-white mt-1">€{data.total.toFixed(2)}</p>
+                                                                    </div>
+                                                                    <button 
+                                                                        onClick={() => confirmUserPayments(user, data.items)}
+                                                                        className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 rounded-xl font-bold text-sm shadow-lg hover:opacity-90 transition-opacity"
+                                                                    >
+                                                                        Conferma
+                                                                    </button>
+                                                                </div>
+                                                            ))}
                                                         </div>
                                                     )}
                                                 </div>
