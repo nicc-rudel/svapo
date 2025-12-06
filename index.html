@@ -68,7 +68,7 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -77,6 +77,7 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 
         // --- FIREBASE CONFIGURATION ---
+        // Inserisci qui le tue chiavi se non usi l'ambiente pre-configurato
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyDwpBj5NXy4iZkOKXMEMd_CY1_1cMMRx-s",
               authDomain: "svapomenager.firebaseapp.com",
@@ -119,95 +120,69 @@
             return [theme, setTheme];
         };
 
-        // --- COMPONENTE SWIPEABLE PER LA LISTA ORDINI ---
-        const SwipeableOrder = ({ order, currentUser, onClick, onDelete, onReset }) => {
-            const [offsetX, setOffsetX] = useState(0);
-            const [isSwiping, setIsSwiping] = useState(false);
-            const startX = useRef(0);
-            
-            const handleTouchStart = (e) => {
-                startX.current = e.touches[0].clientX;
-                setIsSwiping(true);
-            };
+        // --- COMPONENTE MODALE DI CONFERMA (Sostituisce window.confirm) ---
+        const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Conferma", isDanger = false }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden border dark:border-slate-700 transform scale-100 transition-all animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                                {isDanger && <AlertTriangle className="text-red-500" />} {title}
+                            </h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">{message}</p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 flex gap-3 justify-end border-t dark:border-slate-700">
+                            <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Annulla</button>
+                            <button 
+                                onClick={onConfirm} 
+                                className={`px-5 py-2.5 rounded-xl text-white font-bold transition shadow-lg ${isDanger ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'}`}
+                            >
+                                {confirmText}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
-            const handleTouchMove = (e) => {
-                if (!isSwiping) return;
-                const touchX = e.touches[0].clientX;
-                const diff = touchX - startX.current;
-                // Limit swipe to left, max -200px
-                if (diff < 0 && diff > -250) {
-                    setOffsetX(diff);
-                }
-            };
-
-            const handleTouchEnd = () => {
-                setIsSwiping(false);
-                // Soglia di apertura
-                if (offsetX < -80) {
-                    setOffsetX(-140); // Snap open
-                } else {
-                    setOffsetX(0); // Snap close
-                }
-            };
-
-            const handleAction = (e, action, id) => {
-                e.stopPropagation(); 
-                e.preventDefault();
-                setOffsetX(0); 
-                action(id);
-            };
-
+        // --- COMPONENTE CARD ORDINE ---
+        const OrderCard = ({ order, currentUser, onClick, onDelete, onReset }) => {
             const myCount = (order.items || []).filter(i => i.person === currentUser).length;
 
             return (
-                <div className="relative mb-3 h-20 rounded-2xl shadow-sm select-none">
-                    {/* Background Actions (Z-0) */}
-                    <div className="absolute inset-0 flex items-center justify-end px-4 gap-2 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+                <div 
+                    onClick={() => onClick(order.id)}
+                    className="bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 rounded-2xl shadow-sm mb-3 flex justify-between items-center cursor-pointer active:scale-[0.99] transition-transform"
+                >
+                     <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center flex-shrink-0">
+                            <ShoppingBag size={22} />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight truncate">{order.title}</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">I tuoi articoli: <span className="font-bold">{myCount}</span></p>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                        {/* Pulsante Reset (Rotella) */}
                         <button 
-                            onClick={(e) => handleAction(e, onReset, order.id)}
-                            className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-xl text-orange-600 dark:text-orange-400 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition z-20 cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
+                            className="w-10 h-10 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors border border-orange-100 dark:border-orange-900/30"
+                            title="Reset / Rifai Ordine"
                         >
                             <RefreshCcw size={18} />
-                            <span className="text-[10px] font-bold mt-1">Reset</span>
                         </button>
+
+                        {/* Pulsante Elimina (Cestino) */}
                         <button 
-                            onClick={(e) => handleAction(e, onDelete, order.id)}
-                            className="bg-red-100 dark:bg-red-900/30 p-2 rounded-xl text-red-600 dark:text-red-400 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition z-20 cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
+                            className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
+                            title="Elimina Ordine"
                         >
                             <Trash2 size={18} />
-                            <span className="text-[10px] font-bold mt-1">Elim.</span>
                         </button>
-                    </div>
-
-                    {/* Foreground Card (Z-10) */}
-                    <div 
-                        onClick={() => onClick(order.id)}
-                        className="absolute inset-0 bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 flex justify-between items-center z-10 rounded-2xl transition-transform duration-300 ease-out cursor-pointer"
-                        style={{ transform: `translateX(${offsetX}px)` }}
-                        onTouchStart={handleTouchStart}
-                        onTouchMove={handleTouchMove}
-                        onTouchEnd={handleTouchEnd}
-                    >
-                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center">
-                                <ShoppingBag size={20} />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-slate-900 dark:text-white leading-tight">{order.title}</h3>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">I tuoi articoli: {myCount}</p>
-                            </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                             {/* Desktop Buttons (Visible if no touch) */}
-                            <div className="hidden sm:flex gap-1 mr-2">
-                                <button onClick={(e) => handleAction(e, onReset, order.id)} className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/30 text-slate-400 dark:text-slate-500 hover:text-orange-500 dark:hover:text-orange-400 rounded-full"><RefreshCcw size={16}/></button>
-                                <button onClick={(e) => handleAction(e, onDelete, order.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded-full"><Trash2 size={16}/></button>
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 dark:text-slate-400">
-                                {currentUser.charAt(0)}
-                            </div>
-                        </div>
                     </div>
                 </div>
             );
@@ -232,8 +207,20 @@
             const [newUserName, setNewUserName] = useState('');
             const [isAddingUser, setIsAddingUser] = useState(false);
 
+            // Modal State
+            const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, confirmText: 'Conferma' });
+
             // Theme Hook
             const [theme, setTheme] = useTheme();
+
+            // --- HELPER PER MODALE ---
+            const showConfirm = (title, message, onConfirm, isDanger = false, confirmText = "Conferma") => {
+                setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm(); setModalConfig(prev => ({...prev, isOpen: false})); }, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})), isDanger, confirmText });
+            };
+
+            const showInfo = (title, message) => {
+                setModalConfig({ isOpen: true, title, message, onConfirm: () => setModalConfig(prev => ({...prev, isOpen: false})), onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})), isDanger: false, confirmText: 'OK' });
+            };
 
             // --- FIREBASE SYNC ---
             useEffect(() => {
@@ -278,7 +265,10 @@
                     const loadedOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     loadedOrders.sort((a, b) => b.id - a.id);
                     setOrders(loadedOrders);
-                }, (err) => setConnectionError("Errore lettura ordini: " + err.message));
+                }, (err) => {
+                    console.error("Orders Listener Error:", err);
+                    setConnectionError("Errore lettura ordini: " + err.message);
+                });
 
                 const docSettings = doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global');
                 const unsubSettings = onSnapshot(docSettings, (snapshot) => {
@@ -289,6 +279,8 @@
                     } else {
                         setDoc(docSettings, { users: ['Gestore'], paymentRequests: {} });
                     }
+                }, (err) => {
+                    console.error("Settings Listener Error:", err);
                 });
                 return () => { unsubOrders(); unsubSettings(); };
             }, [firebaseUser]);
@@ -383,24 +375,26 @@
                 }
             };
 
-            // FUNZIONE AGGIORNATA PER ELIMINARE UTENTI (ROBUSTA)
-            const deleteUser = async (userToDelete) => {
-                if (userToDelete === 'Gestore') return alert("Impossibile eliminare il Gestore.");
+            // ELIMINAZIONE UTENTE CON MODALE
+            const deleteUser = (userToDelete) => {
+                if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
                 
-                // Conferma
-                if (!confirm(`Vuoi eliminare l'utente "${userToDelete}"?`)) return;
-
-                // Calcolo la nuova lista utenti filtrando quello da eliminare
-                const newUsersList = users.filter(u => u !== userToDelete);
-
-                try {
-                    // Aggiorno il documento con la nuova lista completa
-                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
-                        users: newUsersList 
-                    });
-                } catch (error) {
-                    alert("Errore eliminazione: " + error.message);
-                }
+                showConfirm(
+                    "Elimina Utente", 
+                    `Sei sicuro di voler eliminare definitivamente l'utente "${userToDelete}"?`, 
+                    async () => {
+                        const newUsersList = users.filter(u => u !== userToDelete);
+                        try {
+                            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                                users: newUsersList 
+                            });
+                        } catch (error) {
+                            showInfo("Errore", error.message);
+                        }
+                    },
+                    true, // isDanger
+                    "Elimina"
+                );
             };
 
             const createOrder = async () => {
@@ -447,40 +441,60 @@
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
-            const deleteOrder = async (orderId) => {
-                if (confirm('Sei sicuro di voler eliminare DEFINITIVAMENTE questo ordine?')) {
-                    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()));
-                    setActiveOrderId(null);
-                }
+            // ELIMINAZIONE ORDINE CON MODALE
+            const deleteOrder = (orderId) => {
+                showConfirm(
+                    "Elimina Ordine", 
+                    "Vuoi eliminare definitivamente questo ordine? L'azione è irreversibile.", 
+                    async () => {
+                        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()));
+                        setActiveOrderId(null);
+                    },
+                    true,
+                    "Elimina"
+                );
             };
 
-            const resetOrder = async (orderId) => {
-                if (confirm('Vuoi svuotare tutti gli articoli di questo ordine?')) {
-                    await updateOrderItems(orderId, []);
-                }
-            }
+            // RESET ORDINE CON MODALE
+            const resetOrder = (orderId) => {
+                showConfirm(
+                    "Reset Ordine",
+                    "Vuoi svuotare tutti gli articoli di questo ordine per ricominciare da zero?",
+                    async () => {
+                        await updateOrderItems(orderId, []);
+                    },
+                    false,
+                    "Svuota Ordine"
+                );
+            };
 
-            // RESET TOTALE DELL'APP (SOLO MANAGER)
-            const factoryReset = async () => {
+            // RESET TOTALE APP CON MODALE (SOLO MANAGER)
+            const factoryReset = () => {
                 if (!isManager) return;
-                const confirmation = prompt("SCRIVI 'CANCELLA' per confermare il reset totale. Questa azione eliminerà TUTTI gli ordini e resetterà gli utenti.");
-                if (confirmation === 'CANCELLA') {
-                    try {
-                        const ordersSnapshot = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders'));
-                        const batch = writeBatch(db);
-                        ordersSnapshot.forEach((doc) => {
-                            batch.delete(doc.ref);
-                        });
-                        await batch.commit();
+                
+                showConfirm(
+                    "RESET TOTALE APPLICAZIONE",
+                    "ATTENZIONE: Stai per cancellare TUTTI i dati, tutti gli ordini e tutti gli utenti. Questa azione è distruttiva e irreversibile.",
+                    async () => {
+                        try {
+                            const ordersSnapshot = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders'));
+                            const batch = writeBatch(db);
+                            ordersSnapshot.forEach((doc) => {
+                                batch.delete(doc.ref);
+                            });
+                            await batch.commit();
 
-                        await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: ['Gestore'], paymentRequests: {} });
-                        
-                        alert("Reset completato. L'app è tornata allo stato iniziale.");
-                        window.location.reload();
-                    } catch (e) {
-                        alert("Errore durante il reset: " + e.message);
-                    }
-                }
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: ['Gestore'], paymentRequests: {} });
+                            
+                            showInfo("Reset Completato", "L'applicazione è tornata allo stato iniziale.");
+                            setTimeout(() => window.location.reload(), 2000);
+                        } catch (e) {
+                            showInfo("Errore", "Errore durante il reset: " + e.message);
+                        }
+                    },
+                    true,
+                    "DISTRUGGI TUTTO"
+                );
             };
 
             const togglePaymentRequest = async (user) => {
@@ -518,7 +532,8 @@
             if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-950 animate-pulse">Connessione Cloud...</div>;
 
             if (!currentUser) return (
-                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative">
+                    <ConfirmDialog {...modalConfig} />
                     <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
                         <div className="text-center mb-8">
                             <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400"><CloudLightning size={32} /></div>
@@ -573,7 +588,7 @@
             );
 
             return (
-                <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0">
+                <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0 relative">
                     <div className="max-w-4xl mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col border-x border-slate-100 dark:border-slate-800 relative">
                         <header className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur z-20">
                             <div className="flex items-center gap-3">
@@ -680,20 +695,16 @@
                                                 <h2 className="text-xl font-bold text-slate-800 dark:text-white">Ordini Gruppo</h2>
                                                 <button onClick={createOrder} className="bg-slate-900 dark:bg-white dark:text-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
                                             </div>
-                                            <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 px-1">
-                                                <MoreHorizontal size={14} /> <span>Scorri a sinistra per opzioni</span>
-                                            </div>
                                             <div className="space-y-3">
                                                 {orders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
                                                 {orders.map(order => (
-                                                    <SwipeableOrder 
+                                                    <OrderCard 
                                                         key={order.id} 
                                                         order={order} 
                                                         currentUser={currentUser}
                                                         onClick={(id) => setActiveOrderId(id)}
                                                         onDelete={deleteOrder}
                                                         onReset={resetOrder}
-                                                        isManager={isManager}
                                                     />
                                                 ))}
                                             </div>
@@ -785,101 +796,6 @@
                                 {isManager && <NavButton icon={FileSpreadsheet} label="Logistica" active={view === 'logistics'} onClick={() => setView('logistics')} />}
                             </nav>
                         )}
-                    </div>
-                </div>
-            );
-        };
-
-        const NavButton = ({ icon: Icon, label, active, onClick }) => (
-            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                <Icon size={22} className={active ? "fill-blue-100 dark:fill-blue-900" : ""} /><span className="text-[10px] font-medium">{label}</span>
-            </button>
-        );
-
-        const NavButtonDesktop = ({ icon: Icon, label, active, onClick }) => (
-            <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800'}`}>
-                <Icon size={18} /><span>{label}</span>
-            </button>
-        );
-
-        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete }) => {
-            if (!order) return (
-                 <div className="pb-20 animate-in p-4">
-                    <div className="flex justify-between items-center mb-4">
-                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
-                    </div>
-                    <div className="p-10 text-center text-slate-400">Caricamento in corso...</div>
-                </div>
-            );
-
-            const [person, setPerson] = useState(currentUser || users[0]);
-            const [link, setLink] = useState('');
-            const [liquidMl, setLiquidMl] = useState('');
-            const [nicotineMl, setNicotineMl] = useState('');
-            const [vapeType, setVapeType] = useState('Guanciale');
-            const [otherItems, setOtherItems] = useState('');
-            
-            const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
-
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
-                onAdd(order.id, { person, link, aroma: '', liquidMl, nicotineMl, vapeType, otherItems, price: 0 });
-                setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems('');
-            };
-
-            const itemsByPerson = isManager 
-                ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
-                : { [currentUser]: visibleItems };
-
-            return (
-                <div className="pb-20 animate-in">
-                    <div className="flex justify-between items-center mb-4">
-                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
-                    </div>
-                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
-                    
-                    <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
-                        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                            <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
-                                <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
-                            </div>
-                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Link</label>
-                                <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
-                            </div>
-                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Specifiche</label>
-                                <div className="flex gap-2"><div className="relative flex-1"><input type="text" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="text" placeholder="Nicotina" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
-                                <div className="flex bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600 p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t}</button>)}</div>
-                            </div>
-                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro</label><textarea rows="2" placeholder="Es. Cotone..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} /></div>
-                            <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
-                        </form>
-                    </div>
-
-                    <div className="space-y-4">
-                        {Object.entries(itemsByPerson).map(([pName, pItems]) => (
-                            <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
-                                {isManager && (
-                                    <div className="flex justify-between items-center mb-2 px-1">
-                                        <h3 className="font-bold text-slate-700 dark:text-slate-300">{pName}</h3>
-                                    </div>
-                                )}
-                                <div className="space-y-2">
-                                    {pItems.slice().reverse().map((item) => (
-                                        <div key={item.id} className="p-4 rounded-xl border dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="min-w-0">
-                                                    {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
-                                                    {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
-                                                </div>
-                                            </div>
-                                            {(isManager || item.person === currentUser) && <button onClick={() => onRemove(order.id, item.id)} className="text-slate-300 hover:text-red-500"><X size={18} /></button>}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
                     </div>
                 </div>
             );
