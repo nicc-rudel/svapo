@@ -14,6 +14,9 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Excel Export Library (SheetJS) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
     <!-- React & Babel -->
     <script type="importmap">
     {
@@ -42,12 +45,12 @@
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useMemo } from 'react';
+        import React, { useState, useEffect, useMemo, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -66,7 +69,6 @@
               measurementId: "G-VDCNTT6WHM"
         };
 
-        // Initialize only if config is valid-ish
         let app, db, auth;
         const isConfigured = firebaseConfig.apiKey !== "TUO_API_KEY";
         
@@ -78,6 +80,97 @@
         
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'svapo-manager-default';
 
+        // --- COMPONENTE SWIPEABLE PER LA LISTA ORDINI ---
+        const SwipeableOrder = ({ order, currentUser, onClick, onDelete, onReset, isManager }) => {
+            const [offsetX, setOffsetX] = useState(0);
+            const [isSwiping, setIsSwiping] = useState(false);
+            const startX = useRef(0);
+            
+            // Solo il gestore o il creatore (se ci fosse) può eliminare, qui assumiamo che l'utente possa eliminare localmente o se gestore
+            // In questa logica, tutti possono scorrere, ma le azioni dipendono dai permessi.
+            // Per semplicità UI: tutti vedono swipe, ma actions controllate.
+            
+            const handleTouchStart = (e) => {
+                startX.current = e.touches[0].clientX;
+                setIsSwiping(true);
+            };
+
+            const handleTouchMove = (e) => {
+                if (!isSwiping) return;
+                const touchX = e.touches[0].clientX;
+                const diff = touchX - startX.current;
+                // Limit swipe to left, max -150px
+                if (diff < 0 && diff > -200) {
+                    setOffsetX(diff);
+                }
+            };
+
+            const handleTouchEnd = () => {
+                setIsSwiping(false);
+                // Se scorre più di 80px, resta aperto, altrimenti chiude
+                if (offsetX < -80) {
+                    setOffsetX(-140); // Snap open
+                } else {
+                    setOffsetX(0); // Snap close
+                }
+            };
+
+            const myCount = (order.items || []).filter(i => i.person === currentUser).length;
+
+            return (
+                <div className="relative mb-3 h-20 overflow-hidden rounded-2xl shadow-sm">
+                    {/* Background Actions */}
+                    <div className="absolute inset-0 flex items-center justify-end px-4 gap-2 bg-slate-100">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onReset(order.id); setOffsetX(0); }}
+                            className="bg-orange-100 p-2 rounded-xl text-orange-600 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition"
+                        >
+                            <RefreshCcw size={18} />
+                            <span className="text-[10px] font-bold mt-1">Reset</span>
+                        </button>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onDelete(order.id); setOffsetX(0); }}
+                            className="bg-red-100 p-2 rounded-xl text-red-600 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition"
+                        >
+                            <Trash2 size={18} />
+                            <span className="text-[10px] font-bold mt-1">Elim.</span>
+                        </button>
+                    </div>
+
+                    {/* Foreground Card */}
+                    <div 
+                        onClick={() => onClick(order.id)}
+                        className="absolute inset-0 bg-white border p-4 flex justify-between items-center z-10 transition-transform duration-300 ease-out"
+                        style={{ transform: `translateX(${offsetX}px)` }}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                    >
+                         <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                                <ShoppingBag size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900 leading-tight">{order.title}</h3>
+                                <p className="text-xs text-slate-500">I tuoi articoli: {myCount}</p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                             {/* Desktop Buttons (Visible if no touch or swipe not active) */}
+                            <div className="hidden sm:flex gap-1 mr-2">
+                                <button onClick={(e) => {e.stopPropagation(); onReset(order.id)}} className="p-2 hover:bg-orange-50 text-slate-400 hover:text-orange-500 rounded-full"><RefreshCcw size={16}/></button>
+                                <button onClick={(e) => {e.stopPropagation(); onDelete(order.id)}} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full"><Trash2 size={16}/></button>
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                                {currentUser.charAt(0)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         const OrderManager = () => {
             // --- STATE ---
             const [users, setUsers] = useState(['Gestore', 'Marco', 'Giulia']);
@@ -85,7 +178,7 @@
             const [paymentRequests, setPaymentRequests] = useState({});
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
-            const [connectionError, setConnectionError] = useState(null); // New Error State
+            const [connectionError, setConnectionError] = useState(null); 
             
             // Login State
             const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
@@ -114,7 +207,6 @@
                     }
                 };
                 
-                // Timeout di sicurezza
                 const timer = setTimeout(() => {
                     if (!auth.currentUser) {
                         setConnectionError("Timeout: La connessione sta impiegando troppo tempo.");
@@ -248,77 +340,93 @@
 
             const createOrder = async () => {
                 const dateStr = new Date().toLocaleDateString('it-IT');
-                await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders'), {
-                    id: Date.now(), title: `Ordine del ${dateStr}`, date: dateStr, items: [], status: 'active' 
+                const newId = Date.now().toString(); // ID come stringa per coerenza
+                // Creiamo l'ordine e navighiamo SUBITO
+                setActiveOrderId(newId); // Navigazione immediata
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', newId), {
+                    id: newId, title: `Ordine del ${dateStr}`, date: dateStr, items: [], status: 'active' 
                 });
+                // setActiveOrderId(newId); // Alternativa: naviga dopo la creazione se necessario
             };
 
             const updateOrderItems = async (orderId, newItems) => {
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId), { items: newItems });
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()), { items: newItems });
             };
 
             const addItemToOrder = async (orderId, item) => {
-                const order = orders.find(o => o.id === orderId);
+                const order = orders.find(o => o.id == orderId);
                 if (!order) return;
                 await updateOrderItems(orderId, [...(order.items || []), { ...item, id: Date.now(), paid: false, bought: false }]);
             };
 
             const removeItemFromOrder = async (orderId, itemId) => {
-                const order = orders.find(o => o.id === orderId);
+                const order = orders.find(o => o.id == orderId);
                 if (!order) return;
                 await updateOrderItems(orderId, order.items.filter(i => i.id !== itemId));
             };
 
             const updateItemPrice = async (orderId, itemId, newPrice) => {
-                const order = orders.find(o => o.id === orderId);
+                const order = orders.find(o => o.id == orderId);
                 if (!order) return;
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, price: parseFloat(newPrice) || 0 } : item));
             };
 
             const togglePaidStatus = async (orderId, itemId) => {
                 if (!isManager) return; 
-                const order = orders.find(o => o.id === orderId);
+                const order = orders.find(o => o.id == orderId);
                 if (!order) return;
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, paid: !item.paid } : item));
             };
 
             const toggleBoughtStatus = async (orderId, itemId) => {
-                const order = orders.find(o => o.id === orderId);
+                const order = orders.find(o => o.id == orderId);
                 if (!order) return;
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
+            // Eliminazione completa Ordine
             const deleteOrder = async (orderId) => {
-                if (confirm('Eliminare ordine per tutti?')) {
-                    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId));
-                    setActiveOrderId(null); setView('orders');
+                if (confirm('Sei sicuro di voler eliminare DEFINITIVAMENTE questo ordine?')) {
+                    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()));
+                    setActiveOrderId(null);
                 }
             };
+
+            // Reset Ordine (Svuota lista)
+            const resetOrder = async (orderId) => {
+                if (confirm('Vuoi svuotare tutti gli articoli di questo ordine?')) {
+                    await updateOrderItems(orderId, []);
+                }
+            }
 
             const togglePaymentRequest = async (user) => {
                 const newRequests = { ...paymentRequests, [user]: !paymentRequests[user] };
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { paymentRequests: newRequests });
             };
 
-            const sendWhatsappLogistics = (pName, data) => {
-                const pendingItems = data.items.filter(i => !i.paid);
-                if (pendingItems.length === 0) { alert("Nessun articolo da saldare."); return; }
-                const manualTotal = prompt(`Inserisci totale da richiedere a ${pName}:`);
-                if (manualTotal === null) return;
-                const msg = `Ciao ${pName}, riepilogo sospesi:\n\n` + pendingItems.map(i => `- ${i.link ? 'Prodotto' : i.otherItems}`).join('\n') + `\n\n*Totale da saldare: €${manualTotal}*`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-            };
-
+            // EXCEL EXPORT USING SHEETJS
             const downloadExcel = () => {
-                let csv = "Utente,Ordine,Data,Articolo/Link,Specifiche,Prezzo,Stato\n";
-                orders.forEach(o => (o.items||[]).forEach(i => {
-                    const desc = `"${(i.link || i.otherItems || 'Articolo').replace(/"/g, '""')}"`;
-                    csv += `${i.person},"${o.title}",${o.date},${desc},"${i.liquidMl}ml|${i.nicotineMl}nic|${i.vapeType}",${i.price?.toFixed(2)||'0.00'},${i.paid?'Pagato':'Da Pagare'}\n`;
-                }));
-                const link = document.createElement("a");
-                link.href = encodeURI("data:text/csv;charset=utf-8," + csv);
-                link.download = "ordini_svapo.csv";
-                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                const data = [];
+                orders.forEach(o => {
+                    (o.items || []).forEach(i => {
+                        data.push({
+                            "ID Ordine": o.id,
+                            "Data": o.date,
+                            "Titolo Ordine": o.title,
+                            "Utente": i.person,
+                            "Articolo": i.link ? i.link : i.otherItems,
+                            "Specifiche": `${i.liquidMl || '-'}ml | ${i.nicotineMl || '-'}nic | ${i.vapeType || '-'}`,
+                            "Prezzo": i.price || 0,
+                            "Pagato": i.paid ? "SI" : "NO",
+                            "Acquistato": i.bought ? "SI" : "NO"
+                        });
+                    });
+                });
+
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Riepilogo Svapo");
+                XLSX.writeFile(wb, "svapo_manager_report.xlsx");
             };
 
             // --- UI ---
@@ -463,23 +571,26 @@
                                                 <h2 className="text-xl font-bold text-slate-800">Ordini Gruppo</h2>
                                                 <button onClick={createOrder} className="bg-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
                                             </div>
+                                            <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 px-1">
+                                                <MoreHorizontal size={14} /> <span>Scorri a sinistra per opzioni</span>
+                                            </div>
                                             <div className="space-y-3">
                                                 {orders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
-                                                {orders.map(order => {
-                                                    const myCount = (order.items || []).filter(i => i.person === currentUser).length;
-                                                    return (
-                                                        <div key={order.id} onClick={() => setActiveOrderId(order.id)} className="bg-white border p-4 rounded-2xl shadow-sm cursor-pointer">
-                                                            <div className="flex justify-between items-start">
-                                                                <div><h3 className="font-bold text-slate-900">{order.title}</h3><p className="text-xs text-slate-500">I tuoi articoli: {myCount}</p></div>
-                                                                <div className="text-right"><div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">{currentUser.charAt(0)}</div></div>
-                                                            </div>
-                                                        </div>
-                                                    )
-                                                })}
+                                                {orders.map(order => (
+                                                    <SwipeableOrder 
+                                                        key={order.id} 
+                                                        order={order} 
+                                                        currentUser={currentUser}
+                                                        onClick={(id) => setActiveOrderId(id)}
+                                                        onDelete={deleteOrder}
+                                                        onReset={resetOrder}
+                                                        isManager={isManager}
+                                                    />
+                                                ))}
                                             </div>
                                         </>
                                     ) : (
-                                        <OrderDetail order={orders.find(o => o.id === activeOrderId)} users={users} currentUser={currentUser} isManager={isManager} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onDelete={deleteOrder} />
+                                        <OrderDetail order={orders.find(o => o.id == activeOrderId)} users={users} currentUser={currentUser} isManager={isManager} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onDelete={deleteOrder} />
                                     )}
                                 </div>
                             )}
@@ -518,7 +629,7 @@
                                     <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
                                         <div className="relative z-10 flex justify-between items-start">
                                             <div><p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">Totale Crediti</p><h2 className="text-4xl font-bold text-emerald-400">€{managerStats.totalCredits.toFixed(2)}</h2></div>
-                                            <button onClick={downloadExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><FileSpreadsheet size={16} /> Excel</button>
+                                            <button onClick={downloadExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/50 hover:bg-emerald-500 transition"><FileSpreadsheet size={16} /> Excel (.xlsx)</button>
                                         </div>
                                     </div>
                                     <div className="space-y-6">
@@ -533,7 +644,6 @@
                                                         <p className={`font-mono font-bold text-lg ${data.totalDebt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>{data.totalDebt > 0 ? `-€${data.totalDebt.toFixed(2)}` : '€0.00'}</p>
                                                         <div className="flex gap-1 justify-end mt-1">
                                                             <button onClick={() => togglePaymentRequest(name)} className={`p-1.5 rounded-full transition ${paymentRequests[name] ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}><Bell size={14} /></button>
-                                                            <button onClick={() => sendWhatsappLogistics(name, data)} className="p-1.5 rounded-full bg-emerald-100 text-emerald-600"><MessageCircle size={14} /></button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -542,7 +652,7 @@
                                                         <div key={item.id} className="p-3 text-sm flex justify-between items-center hover:bg-slate-50">
                                                             <div className="overflow-hidden pr-2">
                                                                 <p className="font-medium truncate">{item.link || item.otherItems}</p>
-                                                                <p className="text-[10px] text-slate-400">{item.orderDate}</p>
+                                                                <p className="text-[10px] text-slate-400">{item.orderTitle} • {item.orderDate}</p>
                                                             </div>
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 <input type="number" step="0.01" className="w-16 bg-white border rounded px-1 py-0.5 text-right font-mono" value={item.price} onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} />
@@ -584,6 +694,16 @@
         );
 
         const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete }) => {
+            // Prevent crash if order is undefined
+            if (!order) return (
+                 <div className="pb-20 animate-in p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft /></button>
+                    </div>
+                    <div className="p-10 text-center text-slate-400">Caricamento in corso...</div>
+                </div>
+            );
+
             const [person, setPerson] = useState(currentUser || users[0]);
             const [link, setLink] = useState('');
             const [liquidMl, setLiquidMl] = useState('');
@@ -591,6 +711,7 @@
             const [vapeType, setVapeType] = useState('Guanciale');
             const [otherItems, setOtherItems] = useState('');
             
+            // FIX: Manager vede tutti gli item, User vede solo i suoi.
             const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
 
             const handleSubmit = (e) => {
@@ -600,13 +721,7 @@
                 setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems('');
             };
 
-            const sendWhatsapp = (pName, items) => {
-                const manualTotal = prompt(`Inserisci totale da richiedere a ${pName}:`);
-                if (manualTotal === null) return;
-                const msg = `Ciao ${pName}, riepilogo ordine:\n\n` + items.map(i => `- ${i.link ? 'Prodotto' : i.otherItems}`).join('\n') + `\n\n*Totale: €${manualTotal}*`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-            };
-
+            // Raggruppa items per persona (solo per view manager o se stesso)
             const itemsByPerson = isManager 
                 ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
                 : { [currentUser]: visibleItems };
@@ -615,7 +730,6 @@
                 <div className="pb-20 animate-in">
                     <div className="flex justify-between items-center mb-4">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft /></button>
-                        {isManager && <button onClick={() => onDelete(order.id)} className="p-2 text-red-500 rounded-full hover:bg-red-50"><Trash2 /></button>}
                     </div>
                     <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
                     
@@ -642,7 +756,6 @@
                                 {isManager && (
                                     <div className="flex justify-between items-center mb-2 px-1">
                                         <h3 className="font-bold text-slate-700">{pName}</h3>
-                                        <button onClick={() => sendWhatsapp(pName, pItems)} className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-bold"><Send size={10} /> INVIA RIEPILOGO</button>
                                     </div>
                                 )}
                                 <div className="space-y-2">
