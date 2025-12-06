@@ -56,7 +56,7 @@
         body { overscroll-behavior-y: none; }
         
         /* Dark mode transitions */
-        body, div, p, h1, h2, h3, button { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease; }
+        body, div, p, h1, h2, h3, button, li { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease; }
     </style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900/50">
@@ -68,7 +68,7 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -158,6 +158,178 @@
             </button>
         );
 
+        // --- SUB-COMPONENT: SHOPPING ITEM ---
+        const ShoppingItem = ({ item, toggleBoughtStatus }) => {
+            const [showOther, setShowOther] = useState(false);
+
+            return (
+                <div className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl text-sm border dark:border-slate-600 mb-2 shadow-sm">
+                    {/* Header Item: Persona + Toggle Bought */}
+                    <div className="flex justify-between items-center mb-3">
+                         <span className="font-bold text-lg text-slate-800 dark:text-slate-100">{item.person}</span>
+                         <button 
+                            onClick={() => toggleBoughtStatus(item.orderId, item.id)} 
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${item.bought 
+                                ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/30 shadow-md' 
+                                : 'bg-white dark:bg-slate-700 dark:text-white border-slate-300 dark:border-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600'}`}
+                        >
+                            {item.bought ? <CheckSquare size={16}/> : <Square size={16}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}
+                        </button>
+                    </div>
+
+                    {/* Specifiche Prodotto Grandi */}
+                    <div className="flex flex-wrap gap-2 mb-2">
+                        {item.liquidMl && (
+                            <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-3 py-1.5 rounded-lg font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                <Beaker size={14} /> {item.liquidMl}ml
+                            </div>
+                        )}
+                        {item.nicotineMl && (
+                            <div className="bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 px-3 py-1.5 rounded-lg font-bold border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+                                <Wind size={14} /> {item.nicotineMl}
+                            </div>
+                        )}
+                        {item.vapeType && (
+                            <div className="bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-bold border border-slate-300 dark:border-slate-500">
+                                {item.vapeType}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Sezione Altro (Toggle) */}
+                    {item.otherItems && (
+                        <div className="mt-1">
+                            <button 
+                                onClick={() => setShowOther(!showOther)} 
+                                className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors w-full md:w-auto justify-center md:justify-start"
+                            >
+                                <ShoppingBasket size={14}/> {showOther ? 'Nascondi Altro' : 'Vedi Altro'} {showOther ? <ChevronDown size={14} className="rotate-180"/> : <ChevronDown size={14}/>}
+                            </button>
+                            {showOther && (
+                                <div className="mt-2 p-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-lg text-sm text-orange-900 dark:text-orange-100 animate-in fade-in slide-in-from-top-2">
+                                    <p className="font-bold mb-1 text-xs uppercase opacity-70">Note aggiuntive:</p>
+                                    {item.otherItems}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- NUOVI COMPONENTI (REPORT) ---
+
+        const MonthlyReport = ({ orders, currentUser, onBack }) => {
+            const data = useMemo(() => {
+                const groups = {};
+                orders.forEach(order => {
+                    const [day, month, year] = order.date.split('/');
+                    const key = `${month}/${year}`;
+                    if(!groups[key]) groups[key] = { total: 0, items: [] };
+                    
+                    (order.items || []).forEach(item => {
+                        if(item.person === currentUser) {
+                            groups[key].total += (parseFloat(item.price) || 0);
+                            groups[key].items.push({...item, date: order.date, title: order.title});
+                        }
+                    });
+                });
+                return Object.entries(groups).sort((a,b) => {
+                    const [ma, ya] = a[0].split('/');
+                    const [mb, yb] = b[0].split('/');
+                    return yb - ya || mb - ma;
+                });
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Resoconto Mensile</h2>
+                    </div>
+                    <div className="space-y-4">
+                        {data.length === 0 && <p className="text-center text-slate-400 mt-10">Nessuna spesa registrata.</p>}
+                        {data.map(([date, info]) => (
+                            <div key={date} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border dark:border-slate-700 shadow-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className="font-bold text-lg capitalize">{new Date(date.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</h3>
+                                    <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg font-bold">€{info.total.toFixed(2)}</span>
+                                </div>
+                                <div className="text-sm text-slate-500 dark:text-slate-400">{info.items.length} acquisti</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const LiquidArchive = ({ orders, currentUser, onBack }) => {
+            const liquids = useMemo(() => {
+                return orders.flatMap(o => (o.items || []))
+                    .filter(i => i.person === currentUser && (i.liquidMl || (i.link && i.link.toLowerCase().includes('liquido'))))
+                    .map(i => ({...i, date: i.date || 'N/D'}));
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                     <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Archivio Liquidi</h2>
+                    </div>
+                    <div className="space-y-3">
+                         {liquids.length === 0 && <p className="text-center text-slate-400 mt-10">Nessun liquido in archivio.</p>}
+                         {liquids.map((item, idx) => (
+                             <div key={idx} className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 flex justify-between items-center">
+                                <div className="overflow-hidden">
+                                    <p className="font-bold truncate text-slate-800 dark:text-white">{item.link || item.otherItems || 'Liquido Generico'}</p>
+                                    <p className="text-xs text-slate-500 mt-1">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                </div>
+                                <div className="bg-slate-100 dark:bg-slate-700 p-2 rounded-lg text-slate-500">
+                                    <Droplet size={18} />
+                                </div>
+                             </div>
+                         ))}
+                    </div>
+                </div>
+            )
+        }
+
+        // --- COMPONENTE ARCHIVIO STORICO GENERALE (GESTORE + GUEST) ---
+        const OrderArchive = ({ orders, currentUser, isManager, onBack, onDelete, onReset, onClickOrder }) => {
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Storico Ordini</h2>
+                    </div>
+                    
+                    {orders.length === 0 && <p className="text-center text-slate-400 mt-10">Nessun ordine nello storico.</p>}
+
+                    <div className="space-y-6">
+                        {orders.map(([monthYear, monthOrders]) => (
+                            <div key={monthYear}>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 pl-1 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-2 z-10">
+                                    {new Date(monthYear.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
+                                </h3>
+                                <div className="space-y-3">
+                                    {monthOrders.map(order => (
+                                        <OrderCard 
+                                            key={order.id} 
+                                            order={order} 
+                                            currentUser={currentUser}
+                                            onClick={onClickOrder}
+                                            onDelete={isManager ? onDelete : undefined}
+                                            onReset={isManager ? onReset : undefined}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
         // --- COMPONENTE CARD ORDINE ---
         const OrderCard = ({ order, currentUser, onClick, onDelete, onReset }) => {
             const myCount = (order.items || []).filter(i => i.person === currentUser).length;
@@ -165,43 +337,46 @@
             return (
                 <div 
                     onClick={() => onClick(order.id)}
-                    className="bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 rounded-2xl shadow-sm mb-3 flex justify-between items-center cursor-pointer active:scale-[0.99] transition-transform"
+                    className="bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 rounded-2xl shadow-sm mb-3 flex justify-between items-center cursor-pointer active:scale-[0.99] transition-transform hover:shadow-md group"
                 >
                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center flex-shrink-0">
+                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/40 transition-colors">
                             <ShoppingBag size={22} />
                         </div>
                         <div className="min-w-0">
-                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight truncate">{order.title}</h3>
+                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight truncate group-hover:text-blue-600 transition-colors">{order.title}</h3>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">I tuoi articoli: <span className="font-bold">{myCount}</span></p>
                         </div>
                     </div>
                     
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        {/* Pulsante Reset (Rotella) */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
-                            className="w-10 h-10 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors border border-orange-100 dark:border-orange-900/30"
-                            title="Reset / Rifai Ordine"
-                        >
-                            <RefreshCcw size={18} />
-                        </button>
+                        {/* Pulsanti Gestore */}
+                        {onReset && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
+                                className="w-10 h-10 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors border border-orange-100 dark:border-orange-900/30"
+                                title="Reset / Rifai Ordine"
+                            >
+                                <RefreshCcw size={18} />
+                            </button>
+                        )}
 
-                        {/* Pulsante Elimina (Cestino) */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
-                            className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
-                            title="Elimina Ordine"
-                        >
-                            <Trash2 size={18} />
-                        </button>
+                        {onDelete && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
+                                className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
+                                title="Elimina Ordine"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        )}
                     </div>
                 </div>
             );
         }
 
         // --- COMPONENTE DETTAGLIO ORDINE ---
-        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete }) => {
+        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete, onUpdateStatus }) => {
             if (!order) return (
                  <div className="pb-20 animate-in p-4">
                     <div className="flex justify-between items-center mb-4">
@@ -223,7 +398,7 @@
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
-                onAdd(order.id, { person, link, aroma: '', liquidMl, nicotineMl, vapeType, otherItems, price: 0 });
+                onAdd(order.id, { person, link, aroma: '', liquidMl, nicotineMl, vapeType, otherItems, price: 0, userConfirmedPayment: false });
                 setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems('');
             };
 
@@ -241,17 +416,20 @@
                     <div className="flex justify-between items-center mb-4">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
                         
-                        <button 
-                            onClick={() => onDelete(order.id)} 
-                            className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
-                            title="Elimina intero ordine"
-                        >
-                            <Trash2 size={20} />
-                        </button>
+                        {isManager && (
+                            <button 
+                                onClick={() => onDelete(order.id)} 
+                                className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                title="Elimina intero ordine"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
                     </div>
                     <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
                     
                     <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
+                         <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase mb-3 flex items-center gap-2"><Plus size={16}/> Aggiungi Articolo</h3>
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
                                 <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
@@ -268,32 +446,92 @@
                         </form>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-6">
+                        {/* INTESTAZIONE LISTA PER GUEST */}
+                        {!isManager && (visibleItems.length > 0) && (
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white px-1">I tuoi articoli inseriti:</h3>
+                        )}
+
                         {Object.entries(itemsByPerson).map(([pName, pItems]) => (
                             <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
                                 {isManager && (
-                                    <div className="flex justify-between items-center mb-2 px-1">
-                                        <h3 className="font-bold text-slate-700 dark:text-slate-300">{pName}</h3>
+                                    <div className="flex justify-between items-center mb-3 px-1 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-2 z-10">
+                                        <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{pName}</h3>
+                                        <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{pItems.length} articoli</span>
                                     </div>
                                 )}
                                 <div className="space-y-2">
                                     {pItems.slice().reverse().map((item) => (
-                                        <div key={item.id} className="p-4 rounded-xl border dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="min-w-0">
-                                                    {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
-                                                    {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
+                                        <div key={item.id} className="p-3 md:p-4 rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition hover:shadow-md">
+                                            
+                                            {/* GESTORE VIEW - COLONNE */}
+                                            {isManager ? (
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                                                    {/* Colonna 1: Link/Nome */}
+                                                    <div className="min-w-0">
+                                                        {item.link ? 
+                                                            <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block hover:underline">{item.link}</a> : 
+                                                            <p className="font-bold text-slate-800 dark:text-white truncate">Oggetto manuale</p>
+                                                        }
+                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><ShoppingBasket size={10} /> {item.otherItems}</p>}
+                                                    </div>
+
+                                                    {/* Colonna 2: Specifiche */}
+                                                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400 md:justify-center">
+                                                        {item.liquidMl && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.liquidMl}ml</span>}
+                                                        {item.nicotineMl && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.nicotineMl}nic</span>}
+                                                        {item.vapeType && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.vapeType}</span>}
+                                                    </div>
+
+                                                    {/* Colonna 3: Azioni & Stato */}
+                                                    <div className="flex items-center justify-between md:justify-end gap-3">
+                                                         {/* Guest Confirmation Indicator */}
+                                                         {item.userConfirmedPayment && !item.paid && (
+                                                            <span title="Utente ha confermato il pagamento" className="text-orange-500 bg-orange-50 dark:bg-orange-900/20 p-1.5 rounded-lg animate-pulse">
+                                                                <BellRing size={18} />
+                                                            </span>
+                                                        )}
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                            className="text-slate-300 hover:text-red-500 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                        >
+                                                            <X size={18} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            {/* Stop propagation on delete item button */}
-                                            {(isManager || item.person === currentUser) && (
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
-                                                    className="text-slate-300 hover:text-red-500 p-2"
-                                                >
-                                                    <X size={18} />
-                                                </button>
+                                            ) : (
+                                            /* GUEST VIEW - COMPACT */
+                                                <div className="flex justify-between items-center">
+                                                    <div className="min-w-0 flex-1 pr-3">
+                                                        {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
+                                                    </div>
+                                                    
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        {!item.paid ? (
+                                                            item.userConfirmedPayment ? (
+                                                                <span className="text-[10px] font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded-lg">In attesa conferma</span>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => onUpdateStatus(order.id, item.id, 'userConfirmedPayment', true)}
+                                                                    className="flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-bold px-2 py-1.5 rounded-lg shadow hover:bg-emerald-600"
+                                                                >
+                                                                    <CheckCircle2 size={12}/> Ho Pagato
+                                                                </button>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">Pagato</span>
+                                                        )}
+
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                            className="text-slate-300 hover:text-red-500 p-1"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
@@ -302,16 +540,18 @@
                         ))}
                     </div>
 
-                    <div className="mt-8 pt-6 border-t dark:border-slate-800">
-                        <button 
-                            onClick={handleSendOrder}
-                            className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-transform"
-                        >
-                            <Send size={20} />
-                            CONFERMA E INVIA ORDINE
-                        </button>
-                        <p className="text-center text-xs text-slate-400 mt-2">L'ordine verrà salvato e potrai vederlo nella lista principale.</p>
-                    </div>
+                    {!isManager && (
+                        <div className="mt-8 pt-6 border-t dark:border-slate-800">
+                            <button 
+                                onClick={handleSendOrder}
+                                className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-transform"
+                            >
+                                <Send size={20} />
+                                CONFERMA E INVIA ORDINE
+                            </button>
+                            <p className="text-center text-xs text-slate-400 mt-2">L'ordine verrà salvato e potrai vederlo nella lista principale.</p>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -330,16 +570,30 @@
             const [managerPassword, setManagerPassword] = useState('');
             const [loginError, setLoginError] = useState('');
             
-            const [view, setView] = useState('dashboard'); 
+            const [view, setView] = useState('dashboard'); // dashboard, orders, shopping, logistics, monthly-report, liquid-archive, manager-archive
             const [activeOrderId, setActiveOrderId] = useState(null);
             const [newUserName, setNewUserName] = useState('');
             const [isAddingUser, setIsAddingUser] = useState(false);
+            const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
             // Modal State
             const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, confirmText: 'Conferma' });
 
             // Theme Hook
             const [theme, setTheme] = useTheme();
+
+            // Ref for click outside profile menu
+            const profileMenuRef = useRef(null);
+            
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+                        setIsProfileMenuOpen(false);
+                    }
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
 
             // --- HELPER PER MODALE ---
             const showConfirm = (title, message, onConfirm, isDanger = false, confirmText = "Conferma") => {
@@ -413,8 +667,46 @@
                 return () => { unsubOrders(); unsubSettings(); };
             }, [firebaseUser]);
 
-            // --- CALCULATIONS ---
+            // --- CALCULATIONS & FILTERING ---
             const isManager = currentUser === 'Gestore';
+
+            // Helper date diff
+            const getDaysAgo = (dateStr) => {
+                const [day, month, year] = dateStr.split('/').map(Number);
+                const orderDate = new Date(year, month - 1, day);
+                const today = new Date();
+                const diffTime = Math.abs(today - orderDate);
+                return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            };
+
+            // SEPARATE ORDERS: ACTIVE vs ARCHIVED
+            const { activeOrders, archivedOrdersList } = useMemo(() => {
+                const threshold = isManager ? 7 : 3;
+                return {
+                    activeOrders: orders.filter(o => getDaysAgo(o.date) <= threshold),
+                    archivedOrdersList: orders.filter(o => getDaysAgo(o.date) > threshold)
+                };
+            }, [orders, isManager]);
+
+            // GROUPED ORDERS FOR DISPLAY (MONTHLY)
+            const groupOrdersByMonth = (ordersToGroup) => {
+                const grouped = {};
+                ordersToGroup.forEach(order => {
+                    const [day, month, year] = order.date.split('/');
+                    const key = `${month}/${year}`;
+                    if (!grouped[key]) grouped[key] = [];
+                    grouped[key].push(order);
+                });
+                return Object.entries(grouped).sort((a, b) => {
+                    const [ma, ya] = a[0].split('/');
+                    const [mb, yb] = b[0].split('/');
+                    if (ya !== yb) return yb - ya;
+                    return mb - ma;
+                });
+            };
+
+            const groupedActiveOrders = useMemo(() => groupOrdersByMonth(activeOrders), [activeOrders]);
+            const groupedArchivedOrders = useMemo(() => groupOrdersByMonth(archivedOrdersList), [archivedOrdersList]);
 
             const userStats = useMemo(() => {
                 if (!currentUser || isManager) return null;
@@ -423,32 +715,61 @@
                 const totalItems = myItems.length;
                 const pendingItems = myItems.filter(i => !i.paid).length;
                 
-                // Calculate total debt (Somma dei prezzi non pagati)
-                const totalDebt = myItems.reduce((acc, item) => {
-                    if (!item.paid) {
-                        return acc + (parseFloat(item.price) || 0);
-                    }
-                    return acc;
-                }, 0);
+                let totalDebt = 0;
+                let pendingConfirmationDebt = 0;
 
-                return { totalItems, pendingItems, myItems, totalDebt };
+                myItems.forEach(item => {
+                    if (!item.paid) {
+                        const price = parseFloat(item.price) || 0;
+                        if (item.userConfirmedPayment) {
+                            pendingConfirmationDebt += price;
+                        } else {
+                            totalDebt += price;
+                        }
+                    }
+                });
+                
+                const itemsToPay = myItems.filter(i => !i.paid && !i.userConfirmedPayment).length;
+
+                return { totalItems, pendingItems, myItems, totalDebt, pendingConfirmationDebt, itemsToPay };
             }, [orders, currentUser, isManager]);
 
             const managerStats = useMemo(() => {
                 if (!isManager) return null;
                 let totalCredits = 0;
                 let totalCollected = 0;
+                const pendingByUser = {};
+                const lastOrderItemsByUser = {};
+
                 orders.forEach(order => {
                     (order.items || []).forEach(item => {
                         const price = parseFloat(item.price) || 0;
                         if (item.paid) totalCollected += price;
                         else totalCredits += price;
+
+                        if (item.userConfirmedPayment && !item.paid) {
+                            if (!pendingByUser[item.person]) pendingByUser[item.person] = { total: 0, items: [] };
+                            pendingByUser[item.person].total += price;
+                            pendingByUser[item.person].items.push({ ...item, orderId: order.id });
+                        }
+
+                        if (item.bought) {
+                            if (!lastOrderItemsByUser[item.person]) lastOrderItemsByUser[item.person] = [];
+                            lastOrderItemsByUser[item.person].push({ ...item, orderTitle: order.title });
+                        }
                     });
                 });
-                return { totalCredits, totalCollected };
+                return { totalCredits, totalCollected, pendingByUser, lastOrderItemsByUser };
             }, [orders, isManager]);
 
             const shoppingList = useMemo(() => {
+                // Filter only active orders for shopping list to avoid clutter from old orders
+                // OR keep all if you want comprehensive shopping list. Let's keep all for now or filter by threshold if needed.
+                // Usually shopping list implies current needs. Let's use 'activeOrders' for shopping list? 
+                // The prompt didn't specify, but usually "Archived" implies done. 
+                // However, "bought" status tracks if it's done. 
+                // Let's stick to ALL orders for shopping list to ensure nothing is missed, or maybe just active.
+                // Let's use `orders` (all) to be safe, as an item might be old but not bought.
                 const allItems = orders.flatMap(order => 
                     (order.items || []).map(item => ({ ...item, orderId: order.id, orderTitle: order.title }))
                 );
@@ -550,7 +871,7 @@
             const addItemToOrder = async (orderId, item) => {
                 const order = orders.find(o => o.id == orderId);
                 if (!order) return;
-                await updateOrderItems(orderId, [...(order.items || []), { ...item, id: Date.now(), paid: false, bought: false }]);
+                await updateOrderItems(orderId, [...(order.items || []), { ...item, id: Date.now(), paid: false, bought: false, userConfirmedPayment: false }]);
             };
 
             const removeItemFromOrder = async (orderId, itemId) => {
@@ -571,6 +892,13 @@
                 if (!order) return;
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, paid: !item.paid } : item));
             };
+
+            // Generic status updater (for guest payment confirmation)
+            const updateItemStatus = async (orderId, itemId, field, value) => {
+                const order = orders.find(o => o.id == orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, [field]: value } : item));
+            }
 
             const toggleBoughtStatus = async (orderId, itemId) => {
                 const order = orders.find(o => o.id == orderId);
@@ -637,6 +965,63 @@
             const togglePaymentRequest = async (user) => {
                 const newRequests = { ...paymentRequests, [user]: !paymentRequests[user] };
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { paymentRequests: newRequests });
+            };
+
+            // --- NUOVA FUNZIONE: CONFERMA TUTTI I PAGAMENTI GUEST ---
+            const confirmAllPayments = async () => {
+                // Trova tutti gli ordini con articoli dell'utente attuale non pagati e non confermati
+                const updates = [];
+                orders.forEach(order => {
+                    const userItemsToUpdate = (order.items || []).filter(i => i.person === currentUser && !i.paid && !i.userConfirmedPayment);
+                    
+                    if (userItemsToUpdate.length > 0) {
+                        const newItems = order.items.map(i => {
+                            if (i.person === currentUser && !i.paid && !i.userConfirmedPayment) {
+                                return { ...i, userConfirmedPayment: true };
+                            }
+                            return i;
+                        });
+                        updates.push(updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', order.id), { items: newItems }));
+                    }
+                });
+                
+                try {
+                    await Promise.all(updates);
+                } catch (e) {
+                    console.error("Error confirming payments:", e);
+                    showInfo("Errore", "Impossibile confermare i pagamenti. Riprova.");
+                }
+            };
+
+            // --- NUOVA FUNZIONE: CONFERMA PAGAMENTI UTENTE LATO GESTORE ---
+            const confirmUserPayments = async (user, pendingItems) => {
+                const updates = {}; 
+
+                pendingItems.forEach(item => {
+                    if (!updates[item.orderId]) {
+                        const order = orders.find(o => o.id === item.orderId);
+                        if (order) updates[item.orderId] = [...order.items];
+                    }
+                });
+
+                // Update items in memory map
+                pendingItems.forEach(item => {
+                    if (updates[item.orderId]) {
+                        updates[item.orderId] = updates[item.orderId].map(i => 
+                            i.id === item.id ? { ...i, paid: true } : i
+                        );
+                    }
+                });
+
+                try {
+                    await Promise.all(Object.entries(updates).map(([orderId, newItems]) => 
+                        updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId), { items: newItems })
+                    ));
+                    showInfo("Confermato", `Pagamenti di ${user} confermati.`);
+                } catch (e) {
+                    console.error(e);
+                    showInfo("Errore", "Errore durante la conferma.");
+                }
             };
 
             const downloadExcel = () => {
@@ -728,11 +1113,67 @@
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0 relative">
                     <ConfirmDialog {...modalConfig} />
                     <div className="max-w-4xl mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col border-x border-slate-100 dark:border-slate-800 relative">
+                        
+                        {/* HEADER */}
                         <header className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur z-20">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg">{currentUser.charAt(0)}</div>
-                                <div><p className="text-xs text-slate-400 uppercase font-bold">Benvenuto</p><h1 className="text-lg font-bold text-slate-900 dark:text-white leading-none">{currentUser}</h1></div>
+                            
+                            {/* USER DROPDOWN */}
+                            <div className="relative" ref={profileMenuRef}>
+                                <button onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)} className="flex items-center gap-3 focus:outline-none group">
+                                    <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg group-hover:bg-indigo-700 transition">{currentUser.charAt(0)}</div>
+                                    <div><p className="text-xs text-slate-400 uppercase font-bold">Benvenuto</p><h1 className="text-lg font-bold text-slate-900 dark:text-white leading-none flex items-center gap-1">{currentUser} <ChevronDown size={14} className={`transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} /></h1></div>
+                                </button>
+
+                                {isProfileMenuOpen && (
+                                    <div className="absolute top-14 left-0 w-64 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border dark:border-slate-700 p-2 z-50 animate-in fade-in zoom-in-95 origin-top-left">
+                                        {/* THEME TOGGLE */}
+                                        <div className="p-2 border-b dark:border-slate-700 mb-2">
+                                            <p className="text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Modalità</p>
+                                            <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                                                {['light', 'auto', 'dark'].map(t => (
+                                                    <button key={t} onClick={() => setTheme(t)} className={`flex-1 p-2 rounded-md flex justify-center ${theme === t ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                                                        {t === 'light' && <Sun size={16} />}
+                                                        {t === 'auto' && <Monitor size={16} />}
+                                                        {t === 'dark' && <Moon size={16} />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* MENU ITEMS */}
+                                        {!isManager && (
+                                            <>
+                                                <button onClick={() => { setView('monthly-report'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg"><Calendar size={18}/></div> Resoconto Spese
+                                                </button>
+                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
+                                                </button>
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                            </>
+                                        )}
+
+                                        {isManager && (
+                                            <>
+                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
+                                                </button>
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                                <button onClick={() => { factoryReset(); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/10 text-red-500 text-sm font-medium">
+                                                    <div className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-lg"><AlertTriangle size={18}/></div> Reset App
+                                                </button>
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                            </>
+                                        )}
+                                        
+                                        <button onClick={() => setCurrentUser(null)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-sm font-medium">
+                                            <div className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-lg"><LogOut size={18} /></div> Esci
+                                        </button>
+                                    </div>
+                                )}
                             </div>
+
+                            {/* DESKTOP NAV */}
                             <div className="flex items-center gap-2">
                                 {!activeOrderId && (
                                     <div className="hidden md:flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
@@ -742,30 +1183,13 @@
                                         {isManager && <NavButtonDesktop icon={FileSpreadsheet} label="Logistica" active={view === 'logistics'} onClick={() => setView('logistics')} />}
                                     </div>
                                 )}
-                                <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 hover:text-red-500"><LogOut size={18} /></button>
                             </div>
                         </header>
 
+                        {/* MAIN CONTENT */}
                         <main className="flex-1 overflow-y-auto p-4">
                             {view === 'dashboard' && (
                                 <div className="space-y-6 animate-in">
-                                    {/* SEZIONE TEMA */}
-                                    <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl flex justify-between items-center shadow-sm">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-full">{theme === 'dark' ? <Moon size={20}/> : (theme === 'light' ? <Sun size={20}/> : <Monitor size={20}/>)}</div>
-                                            <div><h3 className="font-bold">Tema</h3><p className="text-xs text-slate-400">Attuale: {theme === 'auto' ? 'Automatico' : (theme === 'dark' ? 'Scuro' : 'Chiaro')}</p></div>
-                                        </div>
-                                        <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                                            {['light', 'auto', 'dark'].map(t => (
-                                                <button key={t} onClick={() => setTheme(t)} className={`p-2 rounded-md ${theme === t ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
-                                                    {t === 'light' && <Sun size={16} />}
-                                                    {t === 'auto' && <Monitor size={16} />}
-                                                    {t === 'dark' && <Moon size={16} />}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
                                     {isManager ? (
                                         <div className="space-y-6">
                                             <div className="grid grid-cols-2 gap-4">
@@ -778,17 +1202,64 @@
                                                     <p className="text-sm text-slate-400">Incassati</p><p className="text-3xl font-bold text-slate-800 dark:text-white">€{managerStats.totalCollected.toFixed(2)}</p>
                                                 </div>
                                             </div>
+
+                                            {/* NUOVO: SEZIONE ULTIMO ORDINE / IN DISTRIBUZIONE */}
+                                            {Object.entries(managerStats.lastOrderItemsByUser).length > 0 && (
+                                                <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 p-5 rounded-2xl">
+                                                    <h3 className="font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-2 mb-4">
+                                                        <Package size={20} /> Ultimo Ordine / In Distribuzione
+                                                    </h3>
+                                                    <div className="space-y-4">
+                                                        {Object.entries(managerStats.lastOrderItemsByUser).map(([user, items]) => (
+                                                            <div key={user} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-indigo-50 dark:border-indigo-900/20">
+                                                                <h4 className="font-bold text-slate-800 dark:text-white mb-2 border-b dark:border-slate-700 pb-1">{user}</h4>
+                                                                <ul className="space-y-2">
+                                                                    {items.map((item, idx) => (
+                                                                        <li key={idx} className="text-sm text-slate-600 dark:text-slate-300 flex flex-col gap-1 p-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                                                                            <div className="flex items-center gap-2 font-bold">
+                                                                                <CheckCircle2 size={14} className="text-emerald-500" />
+                                                                                <span className="truncate flex-1">{item.link || item.otherItems}</span>
+                                                                            </div>
+                                                                            <div className="flex flex-wrap gap-1 text-[10px] text-slate-500 dark:text-slate-400 ml-6">
+                                                                                {item.liquidMl && <span className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border dark:border-slate-600">{item.liquidMl}ml</span>}
+                                                                                {item.nicotineMl && <span className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border dark:border-slate-600">{item.nicotineMl}nic</span>}
+                                                                                {item.vapeType && <span className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border dark:border-slate-600">{item.vapeType}</span>}
+                                                                                {item.otherItems && !item.link && <span className="text-orange-500">{item.otherItems}</span>}
+                                                                            </div>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* NOTIFICHE PAGAMENTI */}
+                                            {Object.entries(managerStats.pendingByUser).length > 0 && (
+                                                <div className="space-y-3">
+                                                    <h3 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2"><BellRing size={18} className="text-orange-500" /> Pagamenti da Confermare</h3>
+                                                    {Object.entries(managerStats.pendingByUser).map(([user, data]) => (
+                                                        <div key={user} className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-2xl flex justify-between items-center shadow-sm">
+                                                            <div>
+                                                                <p className="font-bold text-slate-800 dark:text-slate-200">{user}</p>
+                                                                <p className="text-xs text-orange-600 dark:text-orange-400">Ha segnato come pagati {data.items.length} articoli</p>
+                                                                <p className="font-bold text-lg text-slate-800 dark:text-white mt-1">€{data.total.toFixed(2)}</p>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => confirmUserPayments(user, data.items)}
+                                                                className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 rounded-xl font-bold text-sm shadow-lg hover:opacity-90 transition-opacity"
+                                                            >
+                                                                Conferma
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
                                             <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl p-6 text-center">
                                                 <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Gestisci gli ordini e i pagamenti dalla sezione Logistica.</p>
                                                 <button onClick={() => setView('logistics')} className="bg-slate-800 dark:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-700">Vai alla Logistica</button>
-                                            </div>
-
-                                            {/* RESET APP BUTTON */}
-                                            <div className="border-t dark:border-slate-800 pt-6">
-                                                <button onClick={factoryReset} className="w-full flex items-center justify-center gap-2 text-red-500 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 p-4 rounded-xl font-bold hover:bg-red-100 transition-colors">
-                                                    <AlertTriangle size={20} /> RESET APPLICAZIONE
-                                                </button>
-                                                <p className="text-center text-[10px] text-red-300 mt-2">Cancella tutti i dati e gli ordini.</p>
                                             </div>
                                         </div>
                                     ) : (
@@ -798,18 +1269,61 @@
                                                     <div className="flex justify-between mb-4"><List className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Totale</span></div>
                                                     <p className="text-sm opacity-80">Articoli</p><p className="text-3xl font-bold">{userStats.totalItems}</p>
                                                 </div>
-                                                <div className={`p-5 rounded-2xl border-2 ${userStats.pendingItems > 0 ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400' : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
-                                                    <div className="flex justify-between mb-4"><CheckSquare /><span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50 dark:bg-black/20">Stato</span></div>
-                                                    <p className="text-sm opacity-80">Devi dare</p>
-                                                    <p className="text-3xl font-bold">€{userStats.totalDebt.toFixed(2)}</p>
-                                                    <p className="text-xs mt-1 opacity-70">{userStats.pendingItems} articoli da saldare</p>
+                                                
+                                                {/* MODIFIED DEBT CARD WITH INTERACTIVE TICK */}
+                                                <div className={`p-5 rounded-2xl border-2 transition-colors ${
+                                                    userStats.totalDebt > 0 
+                                                    ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400' 
+                                                    : (userStats.pendingConfirmationDebt > 0 
+                                                        ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
+                                                        : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400')
+                                                }`}>
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        {/* INTERACTIVE TICK BUTTON */}
+                                                        {userStats.itemsToPay > 0 ? (
+                                                            <button 
+                                                                onClick={confirmAllPayments}
+                                                                className="flex items-center justify-center p-2 -mt-2 -ml-2 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 text-orange-600 dark:text-orange-300 transition-colors"
+                                                                title="Clicca per confermare di aver pagato tutto"
+                                                            >
+                                                                <Square size={24} strokeWidth={2.5} />
+                                                            </button>
+                                                        ) : (
+                                                            <div className="flex items-center justify-center p-2 -mt-2 -ml-2 text-emerald-600 dark:text-emerald-400">
+                                                                <CheckSquare size={24} strokeWidth={2.5} />
+                                                            </div>
+                                                        )}
+                                                        <span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50 dark:bg-black/20 self-start">Stato</span>
+                                                    </div>
+                                                    
+                                                    {userStats.totalDebt > 0 ? (
+                                                        <>
+                                                            <p className="text-sm opacity-80">Devi dare</p>
+                                                            <p className="text-3xl font-bold">€{userStats.totalDebt.toFixed(2)}</p>
+                                                            <p className="text-xs mt-1 opacity-70">{userStats.itemsToPay} articoli da saldare</p>
+                                                        </>
+                                                    ) : (
+                                                        userStats.pendingConfirmationDebt > 0 ? (
+                                                            <>
+                                                                <p className="text-sm opacity-80 font-bold">In attesa di conferma</p>
+                                                                <p className="text-3xl font-bold">€{userStats.pendingConfirmationDebt.toFixed(2)}</p>
+                                                                <p className="text-xs mt-1 opacity-70">Hai confermato il pagamento</p>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <p className="text-sm opacity-80">Tutto saldato</p>
+                                                                <p className="text-3xl font-bold">€0.00</p>
+                                                                <p className="text-xs mt-1 opacity-70">Nessun debito</p>
+                                                            </>
+                                                        )
+                                                    )}
                                                 </div>
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2"><History size={18} className="text-indigo-500"/> I tuoi acquisti</h3>
+                                                <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2"><History size={18} className="text-indigo-500"/> I tuoi acquisti recenti</h3>
                                                 <div className="space-y-3">
                                                     {userStats.myItems.length === 0 && <p className="text-slate-400 text-sm italic">Non hai ancora comprato nulla.</p>}
-                                                    {userStats.myItems.slice().reverse().map((item, idx) => ( 
+                                                    {userStats.myItems.slice().reverse().slice(0, 5).map((item, idx) => ( 
                                                         <div key={idx} className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-sm">
                                                             <div className="overflow-hidden mr-2">
                                                                 <p className="font-bold text-slate-800 dark:text-white truncate">{item.link || 'Oggetto senza link'}</p>
@@ -827,30 +1341,43 @@
                                 </div>
                             )}
 
+                            {view === 'monthly-report' && <MonthlyReport orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
+                            
+                            {view === 'liquid-archive' && <LiquidArchive orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
+                            
+                            {view === 'manager-archive' && <OrderArchive orders={groupedArchivedOrders} currentUser={currentUser} isManager={isManager} onBack={() => setView('dashboard')} onDelete={deleteOrder} onReset={resetOrder} onClickOrder={setActiveOrderId} />}
+
                             {view === 'orders' && !isManager && (
-                                <div className="space-y-4 animate-in">
+                                <div className="space-y-6 animate-in">
                                     {!activeOrderId ? (
                                         <>
                                             <div className="flex justify-between items-center mb-2">
                                                 <h2 className="text-xl font-bold text-slate-800 dark:text-white">Ordini Gruppo</h2>
                                                 <button onClick={createOrder} className="bg-slate-900 dark:bg-white dark:text-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
                                             </div>
-                                            <div className="space-y-3">
-                                                {orders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
-                                                {orders.map(order => (
-                                                    <OrderCard 
-                                                        key={order.id} 
-                                                        order={order} 
-                                                        currentUser={currentUser}
-                                                        onClick={(id) => setActiveOrderId(id)}
-                                                        onDelete={deleteOrder}
-                                                        onReset={resetOrder}
-                                                    />
+                                            <div className="space-y-6">
+                                                {activeOrders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
+                                                {groupedActiveOrders.map(([monthYear, monthOrders]) => (
+                                                    <div key={monthYear}>
+                                                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 pl-1">{new Date(monthYear.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</h3>
+                                                        <div className="space-y-3">
+                                                            {monthOrders.map(order => (
+                                                                <OrderCard 
+                                                                    key={order.id} 
+                                                                    order={order} 
+                                                                    currentUser={currentUser}
+                                                                    onClick={(id) => setActiveOrderId(id)}
+                                                                    onDelete={deleteOrder}
+                                                                    onReset={resetOrder}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
                                                 ))}
                                             </div>
                                         </>
                                     ) : (
-                                        <OrderDetail order={orders.find(o => o.id == activeOrderId)} users={users} currentUser={currentUser} isManager={isManager} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onDelete={deleteOrder} />
+                                        <OrderDetail order={orders.find(o => o.id == activeOrderId)} users={users} currentUser={currentUser} isManager={isManager} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onDelete={deleteOrder} onUpdateStatus={updateItemStatus} />
                                     )}
                                 </div>
                             )}
@@ -869,13 +1396,7 @@
                                                 </div>
                                                 <div className="space-y-2">
                                                     {group.items.map(item => (
-                                                        <div key={item.id} className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg text-sm border dark:border-slate-600">
-                                                            <div className="flex justify-between items-center mb-1">
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-200">{item.person} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{item.liquidMl}ml • {item.nicotineMl}</span></span>
-                                                                <button onClick={() => toggleBoughtStatus(item.orderId, item.id)} className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg text-xs font-bold dark:text-white">{item.bought ? <CheckSquare size={14}/> : <Square size={14}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}</button>
-                                                            </div>
-                                                            {item.otherItems && <div className="text-xs text-orange-500 flex gap-1"><ShoppingBasket size={12}/> {item.otherItems}</div>}
-                                                        </div>
+                                                        <ShoppingItem key={item.id} item={item} toggleBoughtStatus={toggleBoughtStatus} />
                                                     ))}
                                                 </div>
                                             </div>
@@ -892,7 +1413,11 @@
                                             <button onClick={downloadExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/50 hover:bg-emerald-500 transition"><FileSpreadsheet size={16} /> Excel (.xlsx)</button>
                                         </div>
                                     </div>
+
+                                    {/* SEZIONE "ORDINI ATTIVI" RIMOSSA COME RICHIESTO */}
+
                                     <div className="space-y-6">
+                                        <h3 className="text-lg font-bold">Situazione Contabile</h3>
                                         {Object.entries(logisticsData).sort(([,a], [,b]) => b.totalDebt - a.totalDebt).map(([name, data]) => (
                                             <div key={name} className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden">
                                                 <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-b dark:border-slate-700 flex justify-between items-center">
@@ -912,11 +1437,15 @@
                                                         <div key={item.id} className="p-3 text-sm flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                             <div className="overflow-hidden pr-2">
                                                                 <p className="font-medium truncate text-slate-800 dark:text-slate-200">{item.link || item.otherItems}</p>
-                                                                <p className="text-[10px] text-slate-400">{item.orderTitle} • {item.orderDate}</p>
+                                                                <div className="flex gap-2 text-[10px] text-slate-400">
+                                                                    <span>{item.orderDate}</span>
+                                                                    {/* INDICATORE CONFERMA UTENTE */}
+                                                                    {item.userConfirmedPayment && !item.paid && <span className="text-orange-500 font-bold flex items-center gap-1"><BellRing size={10}/> Guest ha confermato</span>}
+                                                                </div>
                                                             </div>
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 <input type="number" step="0.01" className="w-16 bg-white dark:bg-slate-900 border dark:border-slate-600 rounded px-1 py-0.5 text-right font-mono text-slate-800 dark:text-white" value={item.price} onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} />
-                                                                <button onClick={() => togglePaidStatus(item.orderId, item.id)} className={`p-1 rounded-full border ${item.paid ? 'bg-emerald-500 text-white border-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}><Check size={12} /></button>
+                                                                <button onClick={() => togglePaidStatus(item.orderId, item.id)} className={`p-1 rounded-full border transition-all ${item.paid ? 'bg-emerald-500 text-white border-emerald-500' : (item.userConfirmedPayment ? 'bg-orange-100 text-orange-500 border-orange-200 animate-pulse' : 'text-slate-300 dark:text-slate-600')}`}><Check size={12} /></button>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -930,7 +1459,7 @@
 
                         {!activeOrderId && (
                             <nav className="bg-white dark:bg-slate-900 border-t dark:border-slate-800 p-2 md:hidden fixed bottom-0 left-0 right-0 z-30 pb-safe flex justify-center gap-8">
-                                <NavButton icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                                <NavButton icon={User} label="Profilo" active={view === 'dashboard' || view === 'monthly-report' || view === 'liquid-archive'} onClick={() => setView('dashboard')} />
                                 {!isManager && <NavButton icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
                                 {isManager && <NavButton icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
                                 {isManager && <NavButton icon={FileSpreadsheet} label="Logistica" active={view === 'logistics'} onClick={() => setView('logistics')} />}
