@@ -13,6 +13,21 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#1e293b',
+                            950: '#020617',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     
     <!-- Excel Export Library (SheetJS) -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -39,9 +54,12 @@
         .animate-in { animation: fadeIn 0.3s ease-out forwards; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
         body { overscroll-behavior-y: none; }
+        
+        /* Dark mode transitions */
+        body, div, p, h1, h2, h3, button { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 selection:bg-indigo-100">
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900/50">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -50,12 +68,12 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
         import { initializeApp } from 'firebase/app';
-        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, writeBatch, arrayUnion } from 'firebase/firestore';
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 
         // --- FIREBASE CONFIGURATION ---
@@ -80,15 +98,32 @@
         
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'svapo-manager-default';
 
+        // --- HOOK PER IL TEMA (DARK MODE) ---
+        const useTheme = () => {
+            const [theme, setTheme] = useState(localStorage.getItem('theme') || 'auto');
+
+            useEffect(() => {
+                const root = window.document.documentElement;
+                const isDark = theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                
+                if (isDark) {
+                    root.classList.add('dark');
+                    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#020617');
+                } else {
+                    root.classList.remove('dark');
+                    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff');
+                }
+                localStorage.setItem('theme', theme);
+            }, [theme]);
+
+            return [theme, setTheme];
+        };
+
         // --- COMPONENTE SWIPEABLE PER LA LISTA ORDINI ---
-        const SwipeableOrder = ({ order, currentUser, onClick, onDelete, onReset, isManager }) => {
+        const SwipeableOrder = ({ order, currentUser, onClick, onDelete, onReset }) => {
             const [offsetX, setOffsetX] = useState(0);
             const [isSwiping, setIsSwiping] = useState(false);
             const startX = useRef(0);
-            
-            // Solo il gestore o il creatore (se ci fosse) può eliminare, qui assumiamo che l'utente possa eliminare localmente o se gestore
-            // In questa logica, tutti possono scorrere, ma le azioni dipendono dai permessi.
-            // Per semplicità UI: tutti vedono swipe, ma actions controllate.
             
             const handleTouchStart = (e) => {
                 startX.current = e.touches[0].clientX;
@@ -99,15 +134,15 @@
                 if (!isSwiping) return;
                 const touchX = e.touches[0].clientX;
                 const diff = touchX - startX.current;
-                // Limit swipe to left, max -150px
-                if (diff < 0 && diff > -200) {
+                // Limit swipe to left, max -200px
+                if (diff < 0 && diff > -250) {
                     setOffsetX(diff);
                 }
             };
 
             const handleTouchEnd = () => {
                 setIsSwiping(false);
-                // Se scorre più di 80px, resta aperto, altrimenti chiude
+                // Soglia di apertura
                 if (offsetX < -80) {
                     setOffsetX(-140); // Snap open
                 } else {
@@ -115,54 +150,61 @@
                 }
             };
 
+            const handleAction = (e, action, id) => {
+                e.stopPropagation(); 
+                e.preventDefault();
+                setOffsetX(0); 
+                action(id);
+            };
+
             const myCount = (order.items || []).filter(i => i.person === currentUser).length;
 
             return (
-                <div className="relative mb-3 h-20 overflow-hidden rounded-2xl shadow-sm">
-                    {/* Background Actions */}
-                    <div className="absolute inset-0 flex items-center justify-end px-4 gap-2 bg-slate-100">
+                <div className="relative mb-3 h-20 rounded-2xl shadow-sm select-none">
+                    {/* Background Actions (Z-0) */}
+                    <div className="absolute inset-0 flex items-center justify-end px-4 gap-2 bg-slate-100 dark:bg-slate-800 rounded-2xl">
                         <button 
-                            onClick={(e) => { e.stopPropagation(); onReset(order.id); setOffsetX(0); }}
-                            className="bg-orange-100 p-2 rounded-xl text-orange-600 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition"
+                            onClick={(e) => handleAction(e, onReset, order.id)}
+                            className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-xl text-orange-600 dark:text-orange-400 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition z-20 cursor-pointer"
                         >
                             <RefreshCcw size={18} />
                             <span className="text-[10px] font-bold mt-1">Reset</span>
                         </button>
                         <button 
-                            onClick={(e) => { e.stopPropagation(); onDelete(order.id); setOffsetX(0); }}
-                            className="bg-red-100 p-2 rounded-xl text-red-600 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition"
+                            onClick={(e) => handleAction(e, onDelete, order.id)}
+                            className="bg-red-100 dark:bg-red-900/30 p-2 rounded-xl text-red-600 dark:text-red-400 flex flex-col items-center justify-center w-14 h-14 active:scale-95 transition z-20 cursor-pointer"
                         >
                             <Trash2 size={18} />
                             <span className="text-[10px] font-bold mt-1">Elim.</span>
                         </button>
                     </div>
 
-                    {/* Foreground Card */}
+                    {/* Foreground Card (Z-10) */}
                     <div 
                         onClick={() => onClick(order.id)}
-                        className="absolute inset-0 bg-white border p-4 flex justify-between items-center z-10 transition-transform duration-300 ease-out"
+                        className="absolute inset-0 bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 flex justify-between items-center z-10 rounded-2xl transition-transform duration-300 ease-out cursor-pointer"
                         style={{ transform: `translateX(${offsetX}px)` }}
                         onTouchStart={handleTouchStart}
                         onTouchMove={handleTouchMove}
                         onTouchEnd={handleTouchEnd}
                     >
                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                            <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center">
                                 <ShoppingBag size={20} />
                             </div>
                             <div>
-                                <h3 className="font-bold text-slate-900 leading-tight">{order.title}</h3>
-                                <p className="text-xs text-slate-500">I tuoi articoli: {myCount}</p>
+                                <h3 className="font-bold text-slate-900 dark:text-white leading-tight">{order.title}</h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">I tuoi articoli: {myCount}</p>
                             </div>
                         </div>
                         
                         <div className="flex items-center gap-2">
-                             {/* Desktop Buttons (Visible if no touch or swipe not active) */}
+                             {/* Desktop Buttons (Visible if no touch) */}
                             <div className="hidden sm:flex gap-1 mr-2">
-                                <button onClick={(e) => {e.stopPropagation(); onReset(order.id)}} className="p-2 hover:bg-orange-50 text-slate-400 hover:text-orange-500 rounded-full"><RefreshCcw size={16}/></button>
-                                <button onClick={(e) => {e.stopPropagation(); onDelete(order.id)}} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full"><Trash2 size={16}/></button>
+                                <button onClick={(e) => handleAction(e, onReset, order.id)} className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/30 text-slate-400 dark:text-slate-500 hover:text-orange-500 dark:hover:text-orange-400 rounded-full"><RefreshCcw size={16}/></button>
+                                <button onClick={(e) => handleAction(e, onDelete, order.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded-full"><Trash2 size={16}/></button>
                             </div>
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 dark:text-slate-400">
                                 {currentUser.charAt(0)}
                             </div>
                         </div>
@@ -173,7 +215,7 @@
 
         const OrderManager = () => {
             // --- STATE ---
-            const [users, setUsers] = useState(['Gestore', 'Marco', 'Giulia']);
+            const [users, setUsers] = useState(['Gestore']);
             const [orders, setOrders] = useState([]);
             const [paymentRequests, setPaymentRequests] = useState({});
             const [currentUser, setCurrentUser] = useState(null);
@@ -189,6 +231,9 @@
             const [activeOrderId, setActiveOrderId] = useState(null);
             const [newUserName, setNewUserName] = useState('');
             const [isAddingUser, setIsAddingUser] = useState(false);
+
+            // Theme Hook
+            const [theme, setTheme] = useTheme();
 
             // --- FIREBASE SYNC ---
             useEffect(() => {
@@ -242,7 +287,7 @@
                         if (data.users) setUsers(data.users);
                         if (data.paymentRequests) setPaymentRequests(data.paymentRequests);
                     } else {
-                        setDoc(docSettings, { users: ['Gestore', 'Marco', 'Giulia'], paymentRequests: {} });
+                        setDoc(docSettings, { users: ['Gestore'], paymentRequests: {} });
                     }
                 });
                 return () => { unsubOrders(); unsubSettings(); };
@@ -333,20 +378,38 @@
                 e.preventDefault();
                 const name = newUserName.trim();
                 if(name && !users.includes(name)) {
-                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: [...users, name] });
+                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: arrayUnion(name) });
                     setNewUserName(''); setIsAddingUser(false);
+                }
+            };
+
+            // FUNZIONE AGGIORNATA PER ELIMINARE UTENTI (ROBUSTA)
+            const deleteUser = async (userToDelete) => {
+                if (userToDelete === 'Gestore') return alert("Impossibile eliminare il Gestore.");
+                
+                // Conferma
+                if (!confirm(`Vuoi eliminare l'utente "${userToDelete}"?`)) return;
+
+                // Calcolo la nuova lista utenti filtrando quello da eliminare
+                const newUsersList = users.filter(u => u !== userToDelete);
+
+                try {
+                    // Aggiorno il documento con la nuova lista completa
+                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                        users: newUsersList 
+                    });
+                } catch (error) {
+                    alert("Errore eliminazione: " + error.message);
                 }
             };
 
             const createOrder = async () => {
                 const dateStr = new Date().toLocaleDateString('it-IT');
-                const newId = Date.now().toString(); // ID come stringa per coerenza
-                // Creiamo l'ordine e navighiamo SUBITO
-                setActiveOrderId(newId); // Navigazione immediata
+                const newId = Date.now().toString();
+                setActiveOrderId(newId);
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', newId), {
                     id: newId, title: `Ordine del ${dateStr}`, date: dateStr, items: [], status: 'active' 
                 });
-                // setActiveOrderId(newId); // Alternativa: naviga dopo la creazione se necessario
             };
 
             const updateOrderItems = async (orderId, newItems) => {
@@ -384,7 +447,6 @@
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
-            // Eliminazione completa Ordine
             const deleteOrder = async (orderId) => {
                 if (confirm('Sei sicuro di voler eliminare DEFINITIVAMENTE questo ordine?')) {
                     await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()));
@@ -392,19 +454,40 @@
                 }
             };
 
-            // Reset Ordine (Svuota lista)
             const resetOrder = async (orderId) => {
                 if (confirm('Vuoi svuotare tutti gli articoli di questo ordine?')) {
                     await updateOrderItems(orderId, []);
                 }
             }
 
+            // RESET TOTALE DELL'APP (SOLO MANAGER)
+            const factoryReset = async () => {
+                if (!isManager) return;
+                const confirmation = prompt("SCRIVI 'CANCELLA' per confermare il reset totale. Questa azione eliminerà TUTTI gli ordini e resetterà gli utenti.");
+                if (confirmation === 'CANCELLA') {
+                    try {
+                        const ordersSnapshot = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders'));
+                        const batch = writeBatch(db);
+                        ordersSnapshot.forEach((doc) => {
+                            batch.delete(doc.ref);
+                        });
+                        await batch.commit();
+
+                        await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: ['Gestore'], paymentRequests: {} });
+                        
+                        alert("Reset completato. L'app è tornata allo stato iniziale.");
+                        window.location.reload();
+                    } catch (e) {
+                        alert("Errore durante il reset: " + e.message);
+                    }
+                }
+            };
+
             const togglePaymentRequest = async (user) => {
                 const newRequests = { ...paymentRequests, [user]: !paymentRequests[user] };
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { paymentRequests: newRequests });
             };
 
-            // EXCEL EXPORT USING SHEETJS
             const downloadExcel = () => {
                 const data = [];
                 orders.forEach(o => {
@@ -430,42 +513,23 @@
             };
 
             // --- UI ---
-            if (!isConfigured) {
-                return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-50">
-                        <div className="bg-red-100 p-4 rounded-full text-red-500 mb-4"><CloudLightning size={48} /></div>
-                        <h1 className="text-xl font-bold text-slate-800 mb-2">Configurazione Mancante</h1>
-                        <p className="text-slate-600 mb-4">L'app non è collegata a Firebase. Se stai usando questo file in locale, devi inserire le tue chiavi API nel codice.</p>
-                    </div>
-                );
-            }
-
-            if (connectionError) {
-                return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-50">
-                        <div className="bg-orange-100 p-4 rounded-full text-orange-500 mb-4"><AlertCircle size={48} /></div>
-                        <h1 className="text-xl font-bold text-slate-800 mb-2">Errore Connessione</h1>
-                        <p className="text-slate-600 mb-4 text-sm font-mono bg-slate-200 p-2 rounded">{connectionError}</p>
-                        <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold">Riprova</button>
-                    </div>
-                );
-            }
-
-            if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 animate-pulse">Connessione Cloud...</div>;
+            if (!isConfigured) return <div className="p-10 text-center">Configurazione mancante</div>;
+            if (connectionError) return <div className="p-10 text-center text-red-500">Errore: {connectionError}</div>;
+            if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-950 animate-pulse">Connessione Cloud...</div>;
 
             if (!currentUser) return (
                 <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
+                    <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
                         <div className="text-center mb-8">
-                            <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600"><CloudLightning size={32} /></div>
-                            <h1 className="text-2xl font-bold text-slate-800">Svapo Manager</h1>
-                            <p className="text-slate-500 text-sm">Cloud Edition</p>
+                            <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400"><CloudLightning size={32} /></div>
+                            <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Svapo Manager</h1>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm">Cloud Edition</p>
                         </div>
                         {isLoggingInAsManager ? (
                             <div className="animate-in">
                                 <button onClick={() => setIsLoggingInAsManager(false)} className="flex items-center gap-1 text-slate-400 mb-4 text-sm font-bold"><ArrowLeft size={16} /> Indietro</button>
                                 <form onSubmit={submitManagerLogin} className="space-y-4">
-                                    <input autoFocus type="password" placeholder="Password (1234)" className="w-full p-4 bg-slate-100 rounded-xl text-center text-xl tracking-widest outline-none focus:ring-2 focus:ring-blue-500" value={managerPassword} onChange={e => setManagerPassword(e.target.value)} />
+                                    <input autoFocus type="password" placeholder="Password (1234)" className="w-full p-4 bg-slate-100 dark:bg-slate-700 dark:text-white rounded-xl text-center text-xl tracking-widest outline-none focus:ring-2 focus:ring-blue-500" value={managerPassword} onChange={e => setManagerPassword(e.target.value)} />
                                     {loginError && <p className="text-red-500 text-sm text-center font-bold">{loginError}</p>}
                                     <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold">Accedi</button>
                                 </form>
@@ -474,15 +538,33 @@
                             <>
                                 <div className="grid grid-cols-2 gap-3 mb-6">
                                     {users.map(u => (
-                                        <button key={u} onClick={() => initiateLogin(u)} className="relative p-4 rounded-xl border-2 border-slate-100 hover:border-blue-500 transition-all font-medium text-slate-700 flex flex-col items-center gap-2">
-                                            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center font-bold">{u.charAt(0)}</div>{u}
-                                            {u === 'Gestore' && <Lock size={12} className="absolute top-2 right-2 text-slate-400" />}
-                                        </button>
+                                        <div key={u} className="relative group">
+                                            {/* Pulsante Principale - Accesso */}
+                                            <button onClick={() => initiateLogin(u)} className="w-full relative p-4 rounded-xl border-2 border-slate-100 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all font-medium text-slate-700 dark:text-slate-200 flex flex-col items-center gap-2">
+                                                <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold">{u.charAt(0)}</div>
+                                                {u}
+                                                {u === 'Gestore' && <Lock size={12} className="absolute top-2 right-2 text-slate-400" />}
+                                            </button>
+                                            
+                                            {/* Pulsante Eliminazione - Sempre visibile e sopraelevato */}
+                                            {u !== 'Gestore' && (
+                                                <button 
+                                                    onClick={(e) => { 
+                                                        e.stopPropagation(); 
+                                                        deleteUser(u); 
+                                                    }}
+                                                    className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-full shadow-lg border-2 border-white dark:border-slate-800 z-50 hover:bg-red-600 transition-transform active:scale-90"
+                                                    aria-label="Elimina utente"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            )}
+                                        </div>
                                     ))}
-                                    <button onClick={() => setIsAddingUser(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 flex flex-col items-center gap-2 justify-center"><Plus size={24} /> <span className="text-sm">Nuovo</span></button>
+                                    <button onClick={() => setIsAddingUser(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 flex flex-col items-center gap-2 justify-center"><Plus size={24} /> <span className="text-sm">Nuovo</span></button>
                                 </div>
                                 {isAddingUser && (
-                                    <form onSubmit={addUser} className="flex gap-2 animate-in"><input autoFocus type="text" placeholder="Nome..." className="flex-1 bg-slate-100 rounded-xl px-4 py-3 outline-none" value={newUserName} onChange={e => setNewUserName(e.target.value)} /><button type="submit" className="bg-blue-600 text-white p-3 rounded-xl font-bold">Ok</button></form>
+                                    <form onSubmit={addUser} className="flex gap-2 animate-in"><input autoFocus type="text" placeholder="Nome..." className="flex-1 bg-slate-100 dark:bg-slate-700 dark:text-white rounded-xl px-4 py-3 outline-none" value={newUserName} onChange={e => setNewUserName(e.target.value)} /><button type="submit" className="bg-blue-600 text-white p-3 rounded-xl font-bold">Ok</button></form>
                                 )}
                             </>
                         )}
@@ -491,27 +573,46 @@
             );
 
             return (
-                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-24 md:pb-0">
-                    <div className="max-w-4xl mx-auto min-h-screen bg-white shadow-xl flex flex-col border-x border-slate-100 relative">
-                        <header className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-20">
+                <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0">
+                    <div className="max-w-4xl mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col border-x border-slate-100 dark:border-slate-800 relative">
+                        <header className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur z-20">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg">{currentUser.charAt(0)}</div>
-                                <div><p className="text-xs text-slate-400 uppercase font-bold">Benvenuto</p><h1 className="text-lg font-bold text-slate-900 leading-none">{currentUser}</h1></div>
+                                <div><p className="text-xs text-slate-400 uppercase font-bold">Benvenuto</p><h1 className="text-lg font-bold text-slate-900 dark:text-white leading-none">{currentUser}</h1></div>
                             </div>
-                            {!activeOrderId && (
-                                <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                                    <NavButtonDesktop icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
-                                    {!isManager && <NavButtonDesktop icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
-                                    {isManager && <NavButtonDesktop icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
-                                    {isManager && <NavButtonDesktop icon={FileSpreadsheet} label="Logistica" active={view === 'logistics'} onClick={() => setView('logistics')} />}
-                                </div>
-                            )}
-                            <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-red-500"><LogOut size={18} /></button>
+                            <div className="flex items-center gap-2">
+                                {!activeOrderId && (
+                                    <div className="hidden md:flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                        <NavButtonDesktop icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                                        {!isManager && <NavButtonDesktop icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
+                                        {isManager && <NavButtonDesktop icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
+                                        {isManager && <NavButtonDesktop icon={FileSpreadsheet} label="Logistica" active={view === 'logistics'} onClick={() => setView('logistics')} />}
+                                    </div>
+                                )}
+                                <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 hover:text-red-500"><LogOut size={18} /></button>
+                            </div>
                         </header>
 
                         <main className="flex-1 overflow-y-auto p-4">
                             {view === 'dashboard' && (
                                 <div className="space-y-6 animate-in">
+                                    {/* SEZIONE TEMA */}
+                                    <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl flex justify-between items-center shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-full">{theme === 'dark' ? <Moon size={20}/> : (theme === 'light' ? <Sun size={20}/> : <Monitor size={20}/>)}</div>
+                                            <div><h3 className="font-bold">Tema</h3><p className="text-xs text-slate-400">Attuale: {theme === 'auto' ? 'Automatico' : (theme === 'dark' ? 'Scuro' : 'Chiaro')}</p></div>
+                                        </div>
+                                        <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                                            {['light', 'auto', 'dark'].map(t => (
+                                                <button key={t} onClick={() => setTheme(t)} className={`p-2 rounded-md ${theme === t ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                                                    {t === 'light' && <Sun size={16} />}
+                                                    {t === 'auto' && <Monitor size={16} />}
+                                                    {t === 'dark' && <Moon size={16} />}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
                                     {isManager ? (
                                         <div className="space-y-6">
                                             <div className="grid grid-cols-2 gap-4">
@@ -519,14 +620,22 @@
                                                     <div className="flex justify-between mb-4"><ArrowUpRight className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Crediti</span></div>
                                                     <p className="text-sm opacity-80">Devono darti</p><p className="text-3xl font-bold">€{managerStats.totalCredits.toFixed(2)}</p>
                                                 </div>
-                                                <div className="bg-white border p-5 rounded-2xl">
-                                                    <div className="flex justify-between mb-4 text-slate-400"><PiggyBank /><span className="text-xs bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-bold">Totale</span></div>
-                                                    <p className="text-sm text-slate-400">Incassati</p><p className="text-3xl font-bold text-slate-800">€{managerStats.totalCollected.toFixed(2)}</p>
+                                                <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-5 rounded-2xl">
+                                                    <div className="flex justify-between mb-4 text-slate-400"><PiggyBank /><span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg text-slate-500 dark:text-slate-300 font-bold">Totale</span></div>
+                                                    <p className="text-sm text-slate-400">Incassati</p><p className="text-3xl font-bold text-slate-800 dark:text-white">€{managerStats.totalCollected.toFixed(2)}</p>
                                                 </div>
                                             </div>
-                                            <div className="bg-slate-100 rounded-2xl p-6 text-center">
-                                                <p className="text-slate-500 text-sm mb-4">Gestisci gli ordini e i pagamenti dalla sezione Logistica.</p>
-                                                <button onClick={() => setView('logistics')} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-700">Vai alla Logistica</button>
+                                            <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl p-6 text-center">
+                                                <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">Gestisci gli ordini e i pagamenti dalla sezione Logistica.</p>
+                                                <button onClick={() => setView('logistics')} className="bg-slate-800 dark:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-700">Vai alla Logistica</button>
+                                            </div>
+
+                                            {/* RESET APP BUTTON */}
+                                            <div className="border-t dark:border-slate-800 pt-6">
+                                                <button onClick={factoryReset} className="w-full flex items-center justify-center gap-2 text-red-500 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 p-4 rounded-xl font-bold hover:bg-red-100 transition-colors">
+                                                    <AlertTriangle size={20} /> RESET APPLICAZIONE
+                                                </button>
+                                                <p className="text-center text-[10px] text-red-300 mt-2">Cancella tutti i dati e gli ordini.</p>
                                             </div>
                                         </div>
                                     ) : (
@@ -536,20 +645,20 @@
                                                     <div className="flex justify-between mb-4"><List className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Totale</span></div>
                                                     <p className="text-sm opacity-80">Articoli</p><p className="text-3xl font-bold">{userStats.totalItems}</p>
                                                 </div>
-                                                <div className={`p-5 rounded-2xl border-2 ${userStats.pendingItems > 0 ? 'bg-orange-50 border-orange-100 text-orange-700' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
-                                                    <div className="flex justify-between mb-4"><CheckSquare /><span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50">Stato</span></div>
+                                                <div className={`p-5 rounded-2xl border-2 ${userStats.pendingItems > 0 ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400' : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400'}`}>
+                                                    <div className="flex justify-between mb-4"><CheckSquare /><span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50 dark:bg-black/20">Stato</span></div>
                                                     <p className="text-sm opacity-80">Da Saldare</p><p className="text-3xl font-bold">{userStats.pendingItems}</p>
                                                 </div>
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><History size={18} className="text-indigo-500"/> I tuoi acquisti</h3>
+                                                <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2"><History size={18} className="text-indigo-500"/> I tuoi acquisti</h3>
                                                 <div className="space-y-3">
                                                     {userStats.myItems.length === 0 && <p className="text-slate-400 text-sm italic">Non hai ancora comprato nulla.</p>}
                                                     {userStats.myItems.slice().reverse().map((item, idx) => ( 
-                                                        <div key={idx} className="bg-white border p-3 rounded-xl flex justify-between items-center shadow-sm">
+                                                        <div key={idx} className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-sm">
                                                             <div className="overflow-hidden mr-2">
-                                                                <p className="font-bold text-slate-800 truncate">{item.link || 'Oggetto senza link'}</p>
-                                                                <p className="text-xs text-slate-500">{item.date}</p>
+                                                                <p className="font-bold text-slate-800 dark:text-white truncate">{item.link || 'Oggetto senza link'}</p>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400">{item.date}</p>
                                                             </div>
                                                             <div className="text-right flex-shrink-0">
                                                                 <p className={`text-[10px] font-bold uppercase tracking-wider ${item.paid ? 'text-emerald-500' : 'text-orange-400'}`}>{item.paid ? 'Saldato' : 'Da Saldare'}</p>
@@ -568,8 +677,8 @@
                                     {!activeOrderId ? (
                                         <>
                                             <div className="flex justify-between items-center mb-2">
-                                                <h2 className="text-xl font-bold text-slate-800">Ordini Gruppo</h2>
-                                                <button onClick={createOrder} className="bg-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
+                                                <h2 className="text-xl font-bold text-slate-800 dark:text-white">Ordini Gruppo</h2>
+                                                <button onClick={createOrder} className="bg-slate-900 dark:bg-white dark:text-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 px-1">
                                                 <MoreHorizontal size={14} /> <span>Scorri a sinistra per opzioni</span>
@@ -600,19 +709,19 @@
                                     <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl"><h2 className="text-3xl font-bold flex items-center gap-2"><ShoppingCart /> Lista Spesa</h2><p className="text-emerald-100 text-sm mt-1">{shoppingList.filter(g => !g.allBought).length} prodotti da acquistare</p></div>
                                     <div className="space-y-4">
                                         {shoppingList.map((group, idx) => (
-                                            <div key={idx} className={`bg-white border rounded-2xl p-4 shadow-sm ${group.allBought ? 'opacity-60' : 'border-emerald-100 ring-1 ring-emerald-50'}`}>
+                                            <div key={idx} className={`bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-2xl p-4 shadow-sm ${group.allBought ? 'opacity-60' : 'border-emerald-100 dark:border-emerald-900/30 ring-1 ring-emerald-50 dark:ring-emerald-900/10'}`}>
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div className="w-full overflow-hidden">
-                                                        <h3 className="font-bold text-lg truncate">{group.count}x {group.link ? 'Prodotto' : 'Oggetto'}</h3>
-                                                        {group.link && <a href={group.link} target="_blank" className="flex items-center gap-1 text-xs bg-blue-50 text-blue-600 px-2 py-1.5 rounded-lg font-bold w-fit mt-1 truncate"><ExternalLink size={12} /> {group.link}</a>}
+                                                        <h3 className="font-bold text-lg truncate text-slate-800 dark:text-white">{group.count}x {group.link ? 'Prodotto' : 'Oggetto'}</h3>
+                                                        {group.link && <a href={group.link} target="_blank" className="flex items-center gap-1 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1.5 rounded-lg font-bold w-fit mt-1 truncate"><ExternalLink size={12} /> {group.link}</a>}
                                                     </div>
                                                 </div>
                                                 <div className="space-y-2">
                                                     {group.items.map(item => (
-                                                        <div key={item.id} className="flex flex-col bg-slate-50 p-2 rounded-lg text-sm border">
+                                                        <div key={item.id} className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg text-sm border dark:border-slate-600">
                                                             <div className="flex justify-between items-center mb-1">
-                                                                <span className="font-semibold text-slate-700">{item.person} <span className="text-xs font-normal text-slate-500">{item.liquidMl}ml • {item.nicotineMl}</span></span>
-                                                                <button onClick={() => toggleBoughtStatus(item.orderId, item.id)} className="flex items-center gap-2 px-3 py-1 bg-white border rounded-lg text-xs font-bold">{item.bought ? <CheckSquare size={14}/> : <Square size={14}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}</button>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-200">{item.person} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{item.liquidMl}ml • {item.nicotineMl}</span></span>
+                                                                <button onClick={() => toggleBoughtStatus(item.orderId, item.id)} className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg text-xs font-bold dark:text-white">{item.bought ? <CheckSquare size={14}/> : <Square size={14}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}</button>
                                                             </div>
                                                             {item.otherItems && <div className="text-xs text-orange-500 flex gap-1"><ShoppingBasket size={12}/> {item.otherItems}</div>}
                                                         </div>
@@ -626,7 +735,7 @@
 
                             {view === 'logistics' && isManager && (
                                 <div className="animate-in space-y-6">
-                                    <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
+                                    <div className="bg-slate-900 dark:bg-black text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
                                         <div className="relative z-10 flex justify-between items-start">
                                             <div><p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">Totale Crediti</p><h2 className="text-4xl font-bold text-emerald-400">€{managerStats.totalCredits.toFixed(2)}</h2></div>
                                             <button onClick={downloadExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/50 hover:bg-emerald-500 transition"><FileSpreadsheet size={16} /> Excel (.xlsx)</button>
@@ -634,29 +743,29 @@
                                     </div>
                                     <div className="space-y-6">
                                         {Object.entries(logisticsData).sort(([,a], [,b]) => b.totalDebt - a.totalDebt).map(([name, data]) => (
-                                            <div key={name} className="bg-white border rounded-2xl shadow-sm overflow-hidden">
-                                                <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
+                                            <div key={name} className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden">
+                                                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 border-b dark:border-slate-700 flex justify-between items-center">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 bg-white border rounded-full flex items-center justify-center font-bold text-slate-600">{name.charAt(0)}</div>
-                                                        <div><h3 className="font-bold text-slate-800">{name}</h3><p className="text-xs text-slate-400">{data.items.length} articoli</p></div>
+                                                        <div className="w-10 h-10 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-full flex items-center justify-center font-bold text-slate-600 dark:text-slate-200">{name.charAt(0)}</div>
+                                                        <div><h3 className="font-bold text-slate-800 dark:text-white">{name}</h3><p className="text-xs text-slate-400">{data.items.length} articoli</p></div>
                                                     </div>
                                                     <div className="text-right">
                                                         <p className={`font-mono font-bold text-lg ${data.totalDebt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>{data.totalDebt > 0 ? `-€${data.totalDebt.toFixed(2)}` : '€0.00'}</p>
                                                         <div className="flex gap-1 justify-end mt-1">
-                                                            <button onClick={() => togglePaymentRequest(name)} className={`p-1.5 rounded-full transition ${paymentRequests[name] ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}><Bell size={14} /></button>
+                                                            <button onClick={() => togglePaymentRequest(name)} className={`p-1.5 rounded-full transition ${paymentRequests[name] ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}><Bell size={14} /></button>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="divide-y">
+                                                <div className="divide-y dark:divide-slate-700">
                                                     {data.items.map(item => (
-                                                        <div key={item.id} className="p-3 text-sm flex justify-between items-center hover:bg-slate-50">
+                                                        <div key={item.id} className="p-3 text-sm flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                             <div className="overflow-hidden pr-2">
-                                                                <p className="font-medium truncate">{item.link || item.otherItems}</p>
+                                                                <p className="font-medium truncate text-slate-800 dark:text-slate-200">{item.link || item.otherItems}</p>
                                                                 <p className="text-[10px] text-slate-400">{item.orderTitle} • {item.orderDate}</p>
                                                             </div>
                                                             <div className="flex items-center gap-2 shrink-0">
-                                                                <input type="number" step="0.01" className="w-16 bg-white border rounded px-1 py-0.5 text-right font-mono" value={item.price} onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} />
-                                                                <button onClick={() => togglePaidStatus(item.orderId, item.id)} className={`p-1 rounded-full border ${item.paid ? 'bg-emerald-500 text-white border-emerald-500' : 'text-slate-300'}`}><Check size={12} /></button>
+                                                                <input type="number" step="0.01" className="w-16 bg-white dark:bg-slate-900 border dark:border-slate-600 rounded px-1 py-0.5 text-right font-mono text-slate-800 dark:text-white" value={item.price} onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} />
+                                                                <button onClick={() => togglePaidStatus(item.orderId, item.id)} className={`p-1 rounded-full border ${item.paid ? 'bg-emerald-500 text-white border-emerald-500' : 'text-slate-300 dark:text-slate-600'}`}><Check size={12} /></button>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -669,7 +778,7 @@
                         </main>
 
                         {!activeOrderId && (
-                            <nav className="bg-white border-t p-2 md:hidden fixed bottom-0 left-0 right-0 z-30 pb-safe flex justify-center gap-8">
+                            <nav className="bg-white dark:bg-slate-900 border-t dark:border-slate-800 p-2 md:hidden fixed bottom-0 left-0 right-0 z-30 pb-safe flex justify-center gap-8">
                                 <NavButton icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
                                 {!isManager && <NavButton icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
                                 {isManager && <NavButton icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
@@ -682,23 +791,22 @@
         };
 
         const NavButton = ({ icon: Icon, label, active, onClick }) => (
-            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-blue-600' : 'text-slate-400'}`}>
-                <Icon size={22} className={active ? "fill-blue-100" : ""} /><span className="text-[10px] font-medium">{label}</span>
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                <Icon size={22} className={active ? "fill-blue-100 dark:fill-blue-900" : ""} /><span className="text-[10px] font-medium">{label}</span>
             </button>
         );
 
         const NavButtonDesktop = ({ icon: Icon, label, active, onClick }) => (
-            <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
+            <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800'}`}>
                 <Icon size={18} /><span>{label}</span>
             </button>
         );
 
         const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete }) => {
-            // Prevent crash if order is undefined
             if (!order) return (
                  <div className="pb-20 animate-in p-4">
                     <div className="flex justify-between items-center mb-4">
-                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft /></button>
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
                     </div>
                     <div className="p-10 text-center text-slate-400">Caricamento in corso...</div>
                 </div>
@@ -711,7 +819,6 @@
             const [vapeType, setVapeType] = useState('Guanciale');
             const [otherItems, setOtherItems] = useState('');
             
-            // FIX: Manager vede tutti gli item, User vede solo i suoi.
             const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
 
             const handleSubmit = (e) => {
@@ -721,7 +828,6 @@
                 setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems('');
             };
 
-            // Raggruppa items per persona (solo per view manager o se stesso)
             const itemsByPerson = isManager 
                 ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
                 : { [currentUser]: visibleItems };
@@ -729,42 +835,42 @@
             return (
                 <div className="pb-20 animate-in">
                     <div className="flex justify-between items-center mb-4">
-                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><ArrowLeft /></button>
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
                     </div>
-                    <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
+                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
                     
-                    <div className="bg-slate-50 border p-4 rounded-2xl mb-8">
+                    <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
-                                <select className="w-full px-3 py-2.5 bg-white border rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                                <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
                             </div>
                             <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Link</label>
-                                <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white border rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
+                                <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
                             </div>
                             <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Specifiche</label>
-                                <div className="flex gap-2"><div className="relative flex-1"><input type="text" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white border rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="text" placeholder="ml Nic" className="w-full px-3 py-2.5 bg-white border rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
-                                <div className="flex bg-white rounded-xl border p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>{t}</button>)}</div>
+                                <div className="flex gap-2"><div className="relative flex-1"><input type="text" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="text" placeholder="Nicotina" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
+                                <div className="flex bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600 p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t}</button>)}</div>
                             </div>
-                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro</label><textarea rows="2" placeholder="Es. Cotone..." className="w-full px-4 py-2.5 bg-white border rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} /></div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro</label><textarea rows="2" placeholder="Es. Cotone..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} /></div>
                             <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
                         </form>
                     </div>
 
                     <div className="space-y-4">
                         {Object.entries(itemsByPerson).map(([pName, pItems]) => (
-                            <div key={pName} className="border-b pb-4 last:border-0">
+                            <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
                                 {isManager && (
                                     <div className="flex justify-between items-center mb-2 px-1">
-                                        <h3 className="font-bold text-slate-700">{pName}</h3>
+                                        <h3 className="font-bold text-slate-700 dark:text-slate-300">{pName}</h3>
                                     </div>
                                 )}
                                 <div className="space-y-2">
                                     {pItems.slice().reverse().map((item) => (
-                                        <div key={item.id} className="p-4 rounded-xl border flex justify-between items-center bg-white">
+                                        <div key={item.id} className="p-4 rounded-xl border dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <div className="min-w-0">
-                                                    {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800">Oggetto manuale</p>}
-                                                    <p className="text-xs text-slate-500 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                                    {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
                                                     {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
                                                 </div>
                                             </div>
