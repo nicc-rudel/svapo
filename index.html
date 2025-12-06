@@ -77,7 +77,6 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 
         // --- FIREBASE CONFIGURATION ---
-        // Inserisci qui le tue chiavi se non usi l'ambiente pre-configurato
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyDwpBj5NXy4iZkOKXMEMd_CY1_1cMMRx-s",
               authDomain: "svapomenager.firebaseapp.com",
@@ -120,7 +119,7 @@
             return [theme, setTheme];
         };
 
-        // --- COMPONENTE MODALE DI CONFERMA (Sostituisce window.confirm) ---
+        // --- COMPONENTE MODALE DI CONFERMA ---
         const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Conferma", isDanger = false }) => {
             if (!isOpen) return null;
             return (
@@ -146,6 +145,19 @@
             );
         };
 
+        // --- COMPONENTI NAVIGAZIONE (Spostati prima di OrderManager) ---
+        const NavButton = ({ icon: Icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                <Icon size={22} className={active ? "fill-blue-100 dark:fill-blue-900" : ""} /><span className="text-[10px] font-medium">{label}</span>
+            </button>
+        );
+
+        const NavButtonDesktop = ({ icon: Icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800'}`}>
+                <Icon size={18} /><span>{label}</span>
+            </button>
+        );
+
         // --- COMPONENTE CARD ORDINE ---
         const OrderCard = ({ order, currentUser, onClick, onDelete, onReset }) => {
             const myCount = (order.items || []).filter(i => i.person === currentUser).length;
@@ -166,7 +178,6 @@
                     </div>
                     
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        {/* Pulsante Reset (Rotella) */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
                             className="w-10 h-10 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors border border-orange-100 dark:border-orange-900/30"
@@ -175,7 +186,6 @@
                             <RefreshCcw size={18} />
                         </button>
 
-                        {/* Pulsante Elimina (Cestino) */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
                             className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
@@ -187,6 +197,121 @@
                 </div>
             );
         }
+
+        // --- COMPONENTE DETTAGLIO ORDINE (Spostato prima di OrderManager) ---
+        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete }) => {
+            if (!order) return (
+                 <div className="pb-20 animate-in p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                    </div>
+                    <div className="p-10 text-center text-slate-400">Caricamento in corso...</div>
+                </div>
+            );
+
+            const [person, setPerson] = useState(currentUser || users[0]);
+            const [link, setLink] = useState('');
+            const [liquidMl, setLiquidMl] = useState('');
+            const [nicotineMl, setNicotineMl] = useState('');
+            const [vapeType, setVapeType] = useState('Guanciale');
+            const [otherItems, setOtherItems] = useState('');
+            
+            const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
+                onAdd(order.id, { person, link, aroma: '', liquidMl, nicotineMl, vapeType, otherItems, price: 0 });
+                setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems('');
+            };
+
+            const handleSendOrder = () => {
+                alert("Ordine inviato correttamente!"); 
+                onBack();
+            };
+
+            const itemsByPerson = isManager 
+                ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
+                : { [currentUser]: visibleItems };
+
+            return (
+                <div className="pb-20 animate-in">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                        
+                        <button 
+                            onClick={() => onDelete(order.id)} 
+                            className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                            title="Elimina intero ordine"
+                        >
+                            <Trash2 size={20} />
+                        </button>
+                    </div>
+                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
+                    
+                    <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                            <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
+                                <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                            </div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Link</label>
+                                <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
+                            </div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Specifiche</label>
+                                <div className="flex gap-2"><div className="relative flex-1"><input type="text" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="text" placeholder="Nicotina" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
+                                <div className="flex bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600 p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t}</button>)}</div>
+                            </div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro</label><textarea rows="2" placeholder="Es. Cotone..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} /></div>
+                            <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
+                        </form>
+                    </div>
+
+                    <div className="space-y-4">
+                        {Object.entries(itemsByPerson).map(([pName, pItems]) => (
+                            <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
+                                {isManager && (
+                                    <div className="flex justify-between items-center mb-2 px-1">
+                                        <h3 className="font-bold text-slate-700 dark:text-slate-300">{pName}</h3>
+                                    </div>
+                                )}
+                                <div className="space-y-2">
+                                    {pItems.slice().reverse().map((item) => (
+                                        <div key={item.id} className="p-4 rounded-xl border dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="min-w-0">
+                                                    {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                                    {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
+                                                </div>
+                                            </div>
+                                            {(isManager || item.person === currentUser) && (
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                    className="text-slate-300 hover:text-red-500 p-2"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t dark:border-slate-800">
+                        <button 
+                            onClick={handleSendOrder}
+                            className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-transform"
+                        >
+                            <Send size={20} />
+                            CONFERMA E INVIA ORDINE
+                        </button>
+                        <p className="text-center text-xs text-slate-400 mt-2">L'ordine verrà salvato e potrai vederlo nella lista principale.</p>
+                    </div>
+                </div>
+            );
+        };
 
         const OrderManager = () => {
             // --- STATE ---
@@ -375,28 +500,6 @@
                 }
             };
 
-            // ELIMINAZIONE UTENTE CON MODALE
-            const deleteUser = (userToDelete) => {
-                if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
-                
-                showConfirm(
-                    "Elimina Utente", 
-                    `Sei sicuro di voler eliminare definitivamente l'utente "${userToDelete}"?`, 
-                    async () => {
-                        const newUsersList = users.filter(u => u !== userToDelete);
-                        try {
-                            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
-                                users: newUsersList 
-                            });
-                        } catch (error) {
-                            showInfo("Errore", error.message);
-                        }
-                    },
-                    true, // isDanger
-                    "Elimina"
-                );
-            };
-
             const createOrder = async () => {
                 const dateStr = new Date().toLocaleDateString('it-IT');
                 const newId = Date.now().toString();
@@ -441,7 +544,6 @@
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
-            // ELIMINAZIONE ORDINE CON MODALE
             const deleteOrder = (orderId) => {
                 showConfirm(
                     "Elimina Ordine", 
@@ -455,7 +557,6 @@
                 );
             };
 
-            // RESET ORDINE CON MODALE
             const resetOrder = (orderId) => {
                 showConfirm(
                     "Reset Ordine",
@@ -468,7 +569,27 @@
                 );
             };
 
-            // RESET TOTALE APP CON MODALE (SOLO MANAGER)
+            const deleteUser = (userToDelete) => {
+                if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
+                
+                showConfirm(
+                    "Elimina Utente", 
+                    `Sei sicuro di voler eliminare definitivamente l'utente "${userToDelete}"?`, 
+                    async () => {
+                        const newUsersList = users.filter(u => u !== userToDelete);
+                        try {
+                            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                                users: newUsersList 
+                            });
+                        } catch (error) {
+                            showInfo("Errore", error.message);
+                        }
+                    },
+                    true, // isDanger
+                    "Elimina"
+                );
+            };
+
             const factoryReset = () => {
                 if (!isManager) return;
                 
