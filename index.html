@@ -354,7 +354,7 @@
                                             order={order} 
                                             currentUser={currentUser}
                                             onClick={onClickOrder}
-                                            onDelete={isManager ? onDelete : undefined}
+                                            onDelete={isManager || order.creator === currentUser ? onDelete : undefined}
                                             onReset={isManager ? onReset : undefined}
                                             isManager={isManager}
                                         />
@@ -370,6 +370,7 @@
         // --- COMPONENTE CARD ORDINE ---
         const OrderCard = ({ order, currentUser, onClick, onDelete, onReset, isManager }) => {
             const myCount = (order.items || []).filter(i => i.person === currentUser).length;
+            const isCreator = order.creator === currentUser;
 
             return (
                 <div 
@@ -387,7 +388,7 @@
                     </div>
                     
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        {/* Pulsanti Gestore - VISIBILI SOLO SE MANAGER */}
+                        {/* Pulsanti Gestore O Creatore Ordine */}
                         {isManager && onReset && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
@@ -398,7 +399,7 @@
                             </button>
                         )}
 
-                        {isManager && onDelete && (
+                        {(isManager || isCreator) && onDelete && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
                                 className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
@@ -456,6 +457,7 @@
             );
             
             const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
+            const isCreator = order.creator === currentUser;
 
             const handleSubmit = (e) => {
                 e.preventDefault();
@@ -490,7 +492,7 @@
                     <div className="flex justify-between items-center mb-4">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
                         
-                        {isManager && (
+                        {(isManager || isCreator) && (
                             <button 
                                 onClick={() => onDelete(order.id)} 
                                 className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
@@ -737,9 +739,9 @@
                 const savedUser = localStorage.getItem('svapo_last_user');
                 if (savedUser) {
                     // Show welcome screen briefly
-                    setShowWelcome(true);
+                    setCurrentUser(savedUser); // Set user first
+                    setShowWelcome(true);      // Then show welcome screen
                     setTimeout(() => {
-                        setCurrentUser(savedUser);
                         setView('dashboard');
                         setShowWelcome(false);
                     }, 1500);
@@ -935,7 +937,15 @@
                 } else {
                     // SAVE USER FOR AUTO-LOGIN
                     localStorage.setItem('svapo_last_user', user);
-                    setCurrentUser(user); setView('dashboard');
+                    
+                    // Trigger Welcome Screen
+                    setCurrentUser(user); // Set user immediately
+                    setShowWelcome(true); // Show welcome
+                    
+                    setTimeout(() => {
+                        setView('dashboard');
+                        setShowWelcome(false); // Hide welcome after delay
+                    }, 1500);
                 }
             };
 
@@ -944,7 +954,16 @@
                 if (managerPassword === '1234') {
                     // SAVE MANAGER FOR AUTO-LOGIN
                     localStorage.setItem('svapo_last_user', 'Gestore');
-                    setCurrentUser('Gestore'); setView('dashboard'); setIsLoggingInAsManager(false);
+                    
+                    // Trigger Welcome Screen
+                    setCurrentUser('Gestore'); 
+                    setIsLoggingInAsManager(false);
+                    setShowWelcome(true);
+
+                    setTimeout(() => {
+                        setView('dashboard');
+                        setShowWelcome(false);
+                    }, 1500);
                 } else {
                     setLoginError('Password errata'); setManagerPassword('');
                 }
@@ -1382,7 +1401,7 @@
                                                                     <button 
                                                                         key={order.id}
                                                                         onClick={() => setActiveOrderId(order.id)}
-                                                                        className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 text-left hover:border-indigo-500 transition-colors group"
+                                                                        className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 text-left hover:border-indigo-500 transition-colors group relative"
                                                                     >
                                                                         <div className="flex justify-between items-center mb-1">
                                                                             <span className="font-bold text-slate-800 dark:text-white group-hover:text-indigo-500 transition-colors">{order.title}</span>
@@ -1397,7 +1416,7 @@
 
                                                     {/* NUOVO: SEZIONE ULTIMO ORDINE / IN DISTRIBUZIONE */}
                                                     {Object.entries(managerStats.lastOrderItemsByUser).length > 0 && (
-                                                        <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 p-5 rounded-2xl">
+                                                        <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 p-5 rounded-2xl mt-6">
                                                             <h3 className="font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-2 mb-4">
                                                                 <Package size={20} /> Ultimo Ordine / In Distribuzione
                                                             </h3>
