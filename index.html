@@ -160,8 +160,9 @@
 
         // --- COMPONENTI NAVIGAZIONE ---
         const NavButton = ({ icon: Icon, label, active, onClick }) => (
-            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-colors ${active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                <Icon size={22} className={active ? "fill-blue-100 dark:fill-blue-900" : ""} /><span className="text-[10px] font-medium">{label}</span>
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-all duration-200 ${active ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-slate-400 dark:text-slate-500'}`}>
+                <Icon size={24} className={active ? "fill-blue-100 dark:fill-blue-900" : ""} />
+                {active && <span className="text-[10px] font-bold mt-1">{label}</span>}
             </button>
         );
 
@@ -744,7 +745,7 @@
                     setTimeout(() => {
                         setView('dashboard');
                         setShowWelcome(false);
-                    }, 1500);
+                    }, 2000); // 2 seconds delay
                 }
             }, []);
 
@@ -945,7 +946,7 @@
                     setTimeout(() => {
                         setView('dashboard');
                         setShowWelcome(false); // Hide welcome after delay
-                    }, 1500);
+                    }, 2000); // 2 seconds delay
                 }
             };
 
@@ -963,7 +964,7 @@
                     setTimeout(() => {
                         setView('dashboard');
                         setShowWelcome(false);
-                    }, 1500);
+                    }, 2000);
                 } else {
                     setLoginError('Password errata'); setManagerPassword('');
                 }
@@ -1662,7 +1663,7 @@
 
                         {/* MOBILE NAV: Show if NO active order overlay is open */}
                         {!activeOrderId && (
-                            <nav className="bg-white dark:bg-slate-900 border-t dark:border-slate-800 p-2 md:hidden fixed bottom-0 left-0 right-0 z-30 pb-safe flex justify-center gap-8">
+                            <nav className="fixed bottom-6 left-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border border-slate-200 dark:border-slate-800 p-3 rounded-2xl shadow-2xl z-50 flex justify-around items-center md:hidden pb-safe">
                                 <NavButton icon={User} label="Profilo" active={view === 'dashboard' || view === 'monthly-report' || view === 'liquid-archive'} onClick={() => setView('dashboard')} />
                                 
                                 {isManager && <NavButton icon={Banknote} label="Pagamenti" active={view === 'payments'} onClick={() => setView('payments')} />}
