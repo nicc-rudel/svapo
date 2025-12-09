@@ -71,7 +71,9 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box,
+            // NUOVE ICONE PACCHETTO SVAPO
+            Cloud, Zap, Droplets, FlaskConical, Sparkles
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -487,12 +489,12 @@
                     <div className="flex flex-wrap gap-2 mb-2">
                         {item.liquidMl && (
                             <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-3 py-1.5 rounded-lg font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1">
-                                <Beaker size={14} /> {item.liquidMl}ml
+                                <Droplets size={14} /> {item.liquidMl}ml
                             </div>
                         )}
                         {item.nicotineMl && (
                             <div className="bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 px-3 py-1.5 rounded-lg font-bold border border-purple-200 dark:border-purple-800 flex items-center gap-1">
-                                <Wind size={14} /> {item.nicotineMl}
+                                <Zap size={14} /> {item.nicotineMl}
                             </div>
                         )}
                         {item.vapeType && (
@@ -509,7 +511,7 @@
                                 onClick={() => setShowOther(!showOther)} 
                                 className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors w-full md:w-auto justify-center md:justify-start"
                             >
-                                <ShoppingBasket size={14}/> {showOther ? 'Nascondi Altro' : 'Vedi Altro'} {showOther ? <ChevronDown size={14} className="rotate-180"/> : <ChevronDown size={14}/>}
+                                <Sparkles size={14}/> {showOther ? 'Nascondi Altro' : 'Vedi Altro'} {showOther ? <ChevronDown size={14} className="rotate-180"/> : <ChevronDown size={14}/>}
                             </button>
                             {showOther && (
                                 <div className="mt-2 p-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-lg text-sm text-orange-900 dark:text-orange-100 animate-in fade-in slide-in-from-top-2">
@@ -604,7 +606,7 @@
                                     <p className="text-xs text-slate-500 mt-1">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
                                 </div>
                                 <div className="bg-slate-100 dark:bg-slate-700 p-2 rounded-lg text-slate-500">
-                                    <Droplet size={18} />
+                                    <Droplets size={18} />
                                 </div>
                              </div>
                          ))}
@@ -800,7 +802,7 @@
                              <div className="flex gap-2">
                                  {estimatedPrice > 0 && (
                                      <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-lg text-xs font-bold animate-in fade-in">
-                                         ~€{estimatedPrice.toFixed(2)}
+                                          ~€{estimatedPrice.toFixed(2)}
                                      </span>
                                  )}
                              </div>
@@ -857,7 +859,7 @@
                                                             <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block hover:underline">{item.link}</a> : 
                                                             <p className="font-bold text-slate-800 dark:text-white truncate">Oggetto manuale</p>
                                                         }
-                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><ShoppingBasket size={10} /> {item.otherItems}</p>}
+                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><Sparkles size={10} /> {item.otherItems}</p>}
                                                     </div>
 
                                                     {/* Colonna 2: Specifiche */}
@@ -889,7 +891,7 @@
                                                     <div className="min-w-0 flex-1 pr-3">
                                                         {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
-                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><ShoppingBasket size={10} inline /> {item.otherItems}</p>}
+                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><Sparkles size={10} inline /> {item.otherItems}</p>}
                                                     </div>
                                                     
                                                     <div className="flex flex-col items-end gap-2">
@@ -1042,7 +1044,7 @@
                 const savedUser = localStorage.getItem('svapo_last_user');
                 if (savedUser) {
                     setCurrentUser(savedUser); 
-                    setShowWelcome(true);      
+                    setShowWelcome(true);       
                     setTimeout(() => {
                         setView('dashboard');
                         setShowWelcome(false); 
@@ -1509,7 +1511,7 @@
 
             if (showWelcome && currentUser) return (
                 <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center text-white animate-in fade-in duration-500">
-                    <CloudLightning size={64} className="mb-4 animate-bounce-slow" />
+                    <Cloud size={64} className="mb-4 animate-bounce-slow" />
                     <h1 className="text-3xl font-bold mb-2">Bentornato, {currentUser}!</h1>
                     <div className="flex items-center gap-2 text-indigo-200">
                         <Loader2 className="animate-spin" size={20} />
@@ -1523,7 +1525,7 @@
                     <ConfirmDialog {...modalConfig} />
                     <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
                         <div className="text-center mb-8">
-                            <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400"><CloudLightning size={32} /></div>
+                            <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400"><Cloud size={32} /></div>
                             <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Svapo Manager</h1>
                             <p className="text-slate-500 dark:text-slate-400 text-sm">Cloud Edition</p>
                         </div>
@@ -1628,7 +1630,7 @@
                                                     <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
                                                 </button>
                                                 <button onClick={() => { setView('calculator'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
-                                                    <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 rounded-lg"><Calculator size={18}/></div> Calcolatore Mix
+                                                    <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 rounded-lg"><FlaskConical size={18}/></div> Calcolatore Mix
                                                 </button>
                                                 <button onClick={() => { setView('warehouse'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-lg"><Box size={18}/></div> Magazzino
@@ -1794,8 +1796,8 @@
                                                             userStats.totalDebt > 0 
                                                             ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400' 
                                                             : (userStats.pendingConfirmationDebt > 0 
-                                                                ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
-                                                                : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400')
+                                                                ? 'bg-emerald-5 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
+                                                                : 'bg-emerald-5 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400')
                                                         }`}>
                                                             <div className="flex justify-between items-start mb-2">
                                                                 {/* INTERACTIVE TICK BUTTON */}
