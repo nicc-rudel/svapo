@@ -42,9 +42,9 @@
             "react": "https://esm.sh/react@18.2.0",
             "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
             "lucide-react": "https://esm.sh/lucide-react@0.263.1",
-            "firebase/app": "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js",
-            "firebase/firestore": "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js",
-            "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js"
+            "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"
         }
     }
     </script>
@@ -59,7 +59,7 @@
         body { overscroll-behavior-y: none; }
         
         /* Dark mode transitions */
-        body, div, p, h1, h2, h3, button, li { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease; }
+        body, div, p, h1, h2, h3, button, li, input, select { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease; }
     </style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900/50">
@@ -71,12 +71,12 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
         import { initializeApp } from 'firebase/app';
-        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, writeBatch, arrayUnion } from 'firebase/firestore';
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, writeBatch, arrayUnion, arrayRemove } from 'firebase/firestore';
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 
         // --- FIREBASE CONFIGURATION ---
@@ -101,14 +101,14 @@
         
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'svapo-manager-default';
 
-        // --- COSTANTI PREZZI (Configurabile) ---
-        const PRICING = {
-            nicotineBottlePrice: 2.50, // Prezzo per boccetta 10ml
-            nicotineBottleMg: 200,     // Mg totali in una boccetta (20mg/ml * 10ml)
-            nicotineBottleVol: 10,     // Volume boccetta nicotina
-            defaultAromaPrice: 6.00,   // Prezzo fisso aroma DEFAULT (Modificato a 6 euro)
-            aromaVol: 10,              // Volume aroma standard (usato per calcolo base residua)
-            basePricePerMl: 0.013      // Costo base VG/PG al ml
+        // --- DEFAULT CONFIG ---
+        const DEFAULT_PRICING = {
+            nicotineBottlePrice: 2.50,
+            nicotineBottleMg: 200,
+            nicotineBottleVol: 10,
+            defaultAromaPrice: 6.00,
+            aromaVol: 10,
+            basePricePerMl: 0.013
         };
 
         // --- HOOK PER IL TEMA (DARK MODE) ---
@@ -152,6 +152,288 @@
                             >
                                 {confirmText}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- MODALE AGGIUNTA PREFERITI ---
+        const AddToFavoriteModal = ({ isOpen, onClose, onConfirm, item }) => {
+            const [name, setName] = useState('');
+            useEffect(() => { if(isOpen) setName(''); }, [isOpen]);
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border dark:border-slate-700 animate-in zoom-in-95">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-pink-500"><Heart fill="currentColor" /> Salva nei Preferiti</h3>
+                        <p className="text-sm text-slate-500 mb-4">Dai un nome personalizzato a questo aroma per ritrovarlo facilmente.</p>
+                        <input 
+                            autoFocus
+                            type="text" 
+                            className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mb-4 font-bold outline-none ring-2 ring-transparent focus:ring-pink-500 transition-all" 
+                            placeholder="Es. Il mio tabaccoso..." 
+                            value={name} 
+                            onChange={e => setName(e.target.value)} 
+                        />
+                        <div className="flex gap-3">
+                            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Annulla</button>
+                            <button 
+                                onClick={() => { if(name.trim()) onConfirm(name); }} 
+                                disabled={!name.trim()}
+                                className="flex-1 py-3 rounded-xl font-bold bg-pink-500 text-white hover:bg-pink-600 shadow-lg shadow-pink-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Salva
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- PRICING MODAL ---
+        const PricingModal = ({ isOpen, onClose, currentPricing, onSave }) => {
+            const [form, setForm] = useState(currentPricing);
+
+            useEffect(() => { setForm(currentPricing); }, [currentPricing, isOpen]);
+
+            if (!isOpen) return null;
+
+            const handleChange = (field, value) => {
+                setForm(prev => ({...prev, [field]: parseFloat(value) || 0}));
+            };
+
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border dark:border-slate-700 animate-in zoom-in-95">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-900 dark:text-white"><Settings /> Configurazione Prezzi</h3>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Costo Boccetta Nicotina (€)</label>
+                                <input type="number" step="0.01" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mt-1 font-bold" value={form.nicotineBottlePrice} onChange={e => handleChange('nicotineBottlePrice', e.target.value)} />
+                                <p className="text-[10px] text-slate-400 mt-1">Attuale: {currentPricing.nicotineBottleMg}mg in {currentPricing.nicotineBottleVol}ml</p>
+                            </div>
+                            
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Costo Base Neutra (€/ml)</label>
+                                <input type="number" step="0.001" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mt-1 font-bold" value={form.basePricePerMl} onChange={e => handleChange('basePricePerMl', e.target.value)} />
+                                <p className="text-[10px] text-slate-400 mt-1">Es: 0.013 = 13€ al Litro</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Costo Aroma Default (€)</label>
+                                <input type="number" step="0.01" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mt-1 font-bold" value={form.defaultAromaPrice} onChange={e => handleChange('defaultAromaPrice', e.target.value)} />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Annulla</button>
+                            <button onClick={() => onSave(form)} className="flex-1 py-3 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30">Salva</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTI NUOVI (GESTORE & UTENTE) ---
+
+        // 1. Calcolatore di Miscelazione (Gestore)
+        const MixingCalculator = ({ onBack }) => {
+            const [totalMl, setTotalMl] = useState(100);
+            const [targetNic, setTargetNic] = useState(3);
+            const [aromaPct, setAromaPct] = useState(10);
+            const [nicStrength, setNicStrength] = useState(20);
+
+            const result = useMemo(() => {
+                const aromaMl = (totalMl * aromaPct) / 100;
+                const nicMl = (totalMl * targetNic) / nicStrength;
+                const baseMl = totalMl - aromaMl - nicMl;
+                return { aromaMl, nicMl, baseMl };
+            }, [totalMl, targetNic, aromaPct, nicStrength]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Calcolatore Mix</h2>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Totale (ml)</label><input type="number" value={totalMl} onChange={e=>setTotalMl(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Nicotina Target</label><input type="number" value={targetNic} onChange={e=>setTargetNic(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Aroma (%)</label><input type="number" value={aromaPct} onChange={e=>setAromaPct(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Forza Nicotina</label><input type="number" value={nicStrength} onChange={e=>setNicStrength(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                        </div>
+                        <div className="mt-6 pt-6 border-t dark:border-slate-700">
+                            <h3 className="text-lg font-bold mb-3">Risultato Ricetta:</h3>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex justify-between p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-300"><span>Base Neutra</span><span className="font-bold">{result.baseMl.toFixed(1)} ml</span></div>
+                                <div className="flex justify-between p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-700 dark:text-purple-300"><span>Nicotina ({Math.ceil(result.nicMl/10)} boccette)</span><span className="font-bold">{result.nicMl.toFixed(1)} ml</span></div>
+                                <div className="flex justify-between p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-orange-700 dark:text-orange-300"><span>Aroma</span><span className="font-bold">{result.aromaMl.toFixed(1)} ml</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 2. Magazzino (Gestore)
+        const WarehouseManager = ({ onBack }) => {
+            const [items, setItems] = useState([]);
+            const [newItem, setNewItem] = useState('');
+            const [qty, setQty] = useState(1);
+
+            useEffect(() => {
+                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'warehouse'), (s) => {
+                    if (s.exists()) setItems(s.data().items || []);
+                });
+                return () => unsub();
+            }, []);
+
+            const handleAdd = async (e) => {
+                e.preventDefault();
+                if(!newItem) return;
+                const item = { id: Date.now(), name: newItem, qty: parseInt(qty) };
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'warehouse'), { items: arrayUnion(item) });
+                setNewItem(''); setQty(1);
+            };
+
+            const handleDelete = async (item) => {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'warehouse'), { items: arrayRemove(item) });
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Magazzino Scorte</h2>
+                    </div>
+                    <form onSubmit={handleAdd} className="flex gap-2 mb-6">
+                        <input type="text" placeholder="Oggetto (es. Base 50/50)" className="flex-1 bg-white dark:bg-slate-800 p-3 rounded-xl border dark:border-slate-700" value={newItem} onChange={e=>setNewItem(e.target.value)} />
+                        <input type="number" className="w-16 bg-white dark:bg-slate-800 p-3 rounded-xl border dark:border-slate-700" value={qty} onChange={e=>setQty(e.target.value)} />
+                        <button type="submit" className="bg-indigo-600 text-white p-3 rounded-xl"><Plus/></button>
+                    </form>
+                    <div className="space-y-2">
+                        {items.map(item => (
+                            <div key={item.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl flex justify-between items-center shadow-sm border dark:border-slate-700">
+                                <div className="flex items-center gap-3">
+                                    <Box size={20} className="text-indigo-500" />
+                                    <div><p className="font-bold">{item.name}</p><p className="text-xs text-slate-400">Quantità: {item.qty}</p></div>
+                                </div>
+                                <button onClick={() => handleDelete(item)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg"><Trash2 size={18}/></button>
+                            </div>
+                        ))}
+                        {items.length === 0 && <p className="text-center text-slate-400">Magazzino vuoto.</p>}
+                    </div>
+                </div>
+            );
+        };
+
+        // 5. Aromi Preferiti (Ex Wishlist) (Utenti)
+        const FavoritesSection = ({ onBack, currentUser, onAddToActiveOrder }) => {
+            const [items, setItems] = useState([]);
+
+            useEffect(() => {
+                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser), (s) => {
+                    if(s.exists()) setItems(s.data().items || []);
+                });
+                return () => unsub();
+            }, [currentUser]);
+
+            const remove = async (item) => {
+                const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser);
+                await updateDoc(ref, { items: arrayRemove(item) });
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Aromi Preferiti</h2>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                        {items.map(i => (
+                            <div key={i.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border dark:border-slate-700">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">{i.name}</h3>
+                                        <a href={i.link} target="_blank" className="text-xs text-blue-500 hover:underline truncate block max-w-[200px]">{i.link}</a>
+                                        <p className="text-xs text-slate-400 mt-1">{i.liquidMl}ml • {i.nicotineMl}nic • {i.vapeType}</p>
+                                    </div>
+                                    <button onClick={()=>remove(i)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={18}/></button>
+                                </div>
+                                <button 
+                                    onClick={() => onAddToActiveOrder(i)}
+                                    className="w-full mt-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                                >
+                                    <Plus size={14}/> Aggiungi all'ordine attivo
+                                </button>
+                            </div>
+                        ))}
+                        {items.length === 0 && (
+                            <div className="text-center py-10 text-slate-400">
+                                <Heart size={48} className="mx-auto mb-3 opacity-20"/>
+                                <p>Nessun aroma preferito.</p>
+                                <p className="text-xs mt-1">Aggiungili cliccando il cuore sui tuoi acquisti recenti.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // 6. Statistiche Avanzate (Utenti)
+        const UserStatistics = ({ orders, currentUser, onBack }) => {
+            const stats = useMemo(() => {
+                let totalSpent = 0;
+                let itemsCount = 0;
+                const typeCounts = {};
+                
+                orders.forEach(o => {
+                    (o.items || []).filter(i => i.person === currentUser).forEach(i => {
+                        totalSpent += (parseFloat(i.price) || 0);
+                        itemsCount++;
+                        const type = i.vapeType || 'Altro';
+                        typeCounts[type] = (typeCounts[type] || 0) + 1;
+                    });
+                });
+                return { totalSpent, itemsCount, typeCounts };
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Le tue Statistiche</h2>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="bg-blue-500 text-white p-5 rounded-2xl shadow-lg">
+                            <p className="text-blue-100 text-sm mb-1">Spesa Totale</p>
+                            <p className="text-3xl font-bold">€{stats.totalSpent.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-indigo-500 text-white p-5 rounded-2xl shadow-lg">
+                            <p className="text-indigo-100 text-sm mb-1">Articoli Presi</p>
+                            <p className="text-3xl font-bold">{stats.itemsCount}</p>
+                        </div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700">
+                        <h3 className="font-bold mb-4">Preferenze di Svapo</h3>
+                        <div className="space-y-3">
+                            {Object.entries(stats.typeCounts).map(([type, count]) => (
+                                <div key={type}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span>{type}</span>
+                                        <span className="font-bold">{count}</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500" style={{width: `${(count / stats.itemsCount) * 100}%`}}></div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -254,7 +536,7 @@
             );
         };
 
-        // --- NUOVI COMPONENTI (REPORT) ---
+        // --- COMPONENTI REPORT ---
 
         const MonthlyReport = ({ orders, currentUser, onBack }) => {
             const data = useMemo(() => {
@@ -331,7 +613,7 @@
             )
         }
 
-        // --- COMPONENTE ARCHIVIO STORICO GENERALE (GESTORE + GUEST) ---
+        // --- COMPONENTE ARCHIVIO STORICO GENERALE ---
         const OrderArchive = ({ orders, currentUser, isManager, onBack, onDelete, onReset, onClickOrder }) => {
             return (
                 <div className="pb-20 animate-in p-4">
@@ -389,7 +671,6 @@
                     </div>
                     
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        {/* Pulsanti Gestore O Creatore Ordine */}
                         {isManager && onReset && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
@@ -415,8 +696,7 @@
         }
 
         // --- COMPONENTE DETTAGLIO ORDINE ---
-        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete, onUpdateStatus }) => {
-            // --- FIX: Spostare Hooks PRIMA di qualsiasi return ---
+        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete, onUpdateStatus, currentPricing, allOrders }) => {
             const [person, setPerson] = useState(currentUser || (users && users.length > 0 ? users[0] : ''));
             const [link, setLink] = useState('');
             const [liquidMl, setLiquidMl] = useState('');
@@ -424,32 +704,41 @@
             const [vapeType, setVapeType] = useState('Guanciale');
             const [otherItems, setOtherItems] = useState('');
             const [extraCost, setExtraCost] = useState(''); 
-            const [customAromaPrice, setCustomAromaPrice] = useState(PRICING.defaultAromaPrice);
+            const [customAromaPrice, setCustomAromaPrice] = useState(currentPricing.defaultAromaPrice);
 
-            // Memoize estimated price
+            // Memoize estimated price using currentPricing prop
             const estimatedPrice = useMemo(() => {
                 const ml = parseFloat(liquidMl) || 0;
                 const nic = parseFloat(nicotineMl) || 0;
                 const extra = parseFloat(extraCost) || 0;
-                const aromaP = parseFloat(customAromaPrice) || PRICING.defaultAromaPrice;
+                const aromaP = parseFloat(customAromaPrice) || currentPricing.defaultAromaPrice;
 
                 if (ml === 0) return 0; 
 
-                const nicBottles = (ml * nic) / PRICING.nicotineBottleMg;
-                const costNic = nicBottles * PRICING.nicotineBottlePrice;
+                const nicBottles = (ml * nic) / currentPricing.nicotineBottleMg;
+                const costNic = nicBottles * currentPricing.nicotineBottlePrice;
                 const costAroma = aromaP;
-                const volNic = nicBottles * PRICING.nicotineBottleVol;
-                const volBase = ml - PRICING.aromaVol - volNic;
-                const costBase = volBase > 0 ? volBase * PRICING.basePricePerMl : 0;
+                const volNic = nicBottles * currentPricing.nicotineBottleVol;
+                const volBase = ml - currentPricing.aromaVol - volNic;
+                const costBase = volBase > 0 ? volBase * currentPricing.basePricePerMl : 0;
 
                 return costNic + costAroma + costBase + extra;
-            }, [liquidMl, nicotineMl, extraCost, customAromaPrice]);
+            }, [liquidMl, nicotineMl, extraCost, customAromaPrice, currentPricing]);
 
-            // Se order non esiste (e.g. caricamento o errore), mostra loader MA DOPO aver chiamato gli hook
             if (!order) return (
                  <div className="pb-20 animate-in p-4">
                     <div className="flex justify-between items-center mb-4">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                        
+                        {(isManager || (order && order.creator === currentUser)) && (
+                            <button 
+                                onClick={() => onDelete(order.id)} 
+                                className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                title="Elimina intero ordine"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
                     </div>
                     <div className="p-10 text-center text-slate-400">
                         <p>Ordine non trovato o in caricamento...</p>
@@ -476,7 +765,7 @@
                     userConfirmedPayment: false 
                 });
                 
-                setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems(''); setExtraCost(''); setCustomAromaPrice(PRICING.defaultAromaPrice);
+                setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems(''); setExtraCost(''); setCustomAromaPrice(currentPricing.defaultAromaPrice);
             };
 
             const handleSendOrder = () => {
@@ -508,11 +797,13 @@
                     <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
                          <div className="flex justify-between items-center mb-3">
                              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2"><Plus size={16}/> Aggiungi Articolo</h3>
-                             {estimatedPrice > 0 && (
-                                 <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-lg text-xs font-bold animate-in fade-in">
-                                     Prezzo Stimato: €{estimatedPrice.toFixed(2)}
-                                 </span>
-                             )}
+                             <div className="flex gap-2">
+                                 {estimatedPrice > 0 && (
+                                     <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-lg text-xs font-bold animate-in fade-in">
+                                         ~€{estimatedPrice.toFixed(2)}
+                                     </span>
+                                 )}
+                             </div>
                          </div>
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                             <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
@@ -526,7 +817,7 @@
                                     <div className="flex gap-2"><div className="relative flex-1"><input type="number" inputMode="numeric" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="number" inputMode="decimal" placeholder="Nicotina" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
                                 </div>
                                 <div className="space-y-2 w-1/3"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Costo Aroma (€)</label>
-                                    <input type="number" step="0.01" inputMode="decimal" placeholder="6.00" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={customAromaPrice} onChange={e => setCustomAromaPrice(e.target.value)} />
+                                    <input type="number" step="0.01" inputMode="decimal" placeholder={currentPricing.defaultAromaPrice.toFixed(2)} className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={customAromaPrice} onChange={e => setCustomAromaPrice(e.target.value)} />
                                 </div>
                             </div>
                             <div className="flex bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600 p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t}</button>)}</div>
@@ -557,7 +848,6 @@
                                 <div className="space-y-2">
                                     {pItems.slice().reverse().map((item) => (
                                         <div key={item.id} className="p-3 md:p-4 rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition hover:shadow-md">
-                                            
                                             {/* GESTORE VIEW - COLONNE */}
                                             {isManager ? (
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
@@ -627,7 +917,7 @@
                                                     </div>
                                                 </div>
                                             )}
-                                        </div>
+                                    </div>
                                     ))}
                                 </div>
                             </div>
@@ -655,21 +945,28 @@
             const [users, setUsers] = useState(['Gestore']);
             const [orders, setOrders] = useState([]);
             const [paymentRequests, setPaymentRequests] = useState({});
+            const [pricing, setPricing] = useState(DEFAULT_PRICING); 
+
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
             const [connectionError, setConnectionError] = useState(null); 
-            const [showWelcome, setShowWelcome] = useState(false); // Welcome screen state
+            const [showWelcome, setShowWelcome] = useState(false);
             
             // Login State
             const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
             const [managerPassword, setManagerPassword] = useState('');
             const [loginError, setLoginError] = useState('');
             
-            const [view, setView] = useState('dashboard'); // dashboard, orders, shopping, monthly-report, liquid-archive, manager-archive, payments
+            const [view, setView] = useState('dashboard');
             const [activeOrderId, setActiveOrderId] = useState(null);
             const [newUserName, setNewUserName] = useState('');
             const [isAddingUser, setIsAddingUser] = useState(false);
             const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+            const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+            
+            // --- NEW STATES FOR FAVORITES ---
+            const [favModalOpen, setFavModalOpen] = useState(false);
+            const [itemToFav, setItemToFav] = useState(null);
 
             // Modal State
             const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, confirmText: 'Conferma' });
@@ -711,8 +1008,13 @@
                             await signInAnonymously(auth);
                         }
                     } catch (err) {
-                        console.error("Auth Error:", err);
-                        setConnectionError(err.message);
+                        console.warn("Custom token auth failed, trying anonymous:", err);
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (anonErr) {
+                            console.error("Anonymous auth failed:", anonErr);
+                            setConnectionError(anonErr.message);
+                        }
                     }
                 };
                 
@@ -739,13 +1041,12 @@
             useEffect(() => {
                 const savedUser = localStorage.getItem('svapo_last_user');
                 if (savedUser) {
-                    // Show welcome screen briefly
-                    setCurrentUser(savedUser); // Set user first
-                    setShowWelcome(true);      // Then show welcome screen
+                    setCurrentUser(savedUser); 
+                    setShowWelcome(true);      
                     setTimeout(() => {
                         setView('dashboard');
-                        setShowWelcome(false);
-                    }, 2000); // 2 seconds delay
+                        setShowWelcome(false); 
+                    }, 2000); 
                 }
             }, []);
 
@@ -767,8 +1068,10 @@
                         const data = snapshot.data();
                         if (data.users) setUsers(data.users);
                         if (data.paymentRequests) setPaymentRequests(data.paymentRequests);
+                        // Fetch Pricing from DB, else default
+                        if (data.pricing) setPricing(data.pricing);
                     } else {
-                        setDoc(docSettings, { users: ['Gestore'], paymentRequests: {} });
+                        setDoc(docSettings, { users: ['Gestore'], paymentRequests: {}, pricing: DEFAULT_PRICING });
                     }
                 }, (err) => {
                     console.error("Settings Listener Error:", err);
@@ -779,7 +1082,6 @@
             // --- CALCULATIONS & FILTERING ---
             const isManager = currentUser === 'Gestore';
 
-            // Helper date diff
             const getDaysAgo = (dateStr) => {
                 const [day, month, year] = dateStr.split('/').map(Number);
                 const orderDate = new Date(year, month - 1, day);
@@ -788,15 +1090,8 @@
                 return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
             };
 
-            // SEPARATE ORDERS: ACTIVE vs ARCHIVED
             const { activeOrders, archivedOrdersList } = useMemo(() => {
                 const threshold = isManager ? 7 : 3;
-                
-                // FILTERING LOGIC FOR PRIVACY
-                // Manager sees everything.
-                // Guest sees:
-                // 1. Orders created by Manager (public group orders) -> we assume creator 'Gestore' or undefined (legacy)
-                // 2. Orders created by THEMSELVES (private orders)
                 const filterVisible = (o) => {
                     if (isManager) return true;
                     return (o.creator === 'Gestore' || !o.creator || o.creator === currentUser);
@@ -810,7 +1105,6 @@
                 };
             }, [orders, isManager, currentUser]);
 
-            // GROUPED ORDERS FOR DISPLAY (MONTHLY)
             const groupOrdersByMonth = (ordersToGroup) => {
                 const grouped = {};
                 ordersToGroup.forEach(order => {
@@ -832,8 +1126,8 @@
 
             const userStats = useMemo(() => {
                 if (!currentUser || isManager) return null;
-                const myItems = orders.flatMap(o => (o.items || []).map(i => ({...i, date: o.date, orderTitle: o.title})))
-                                    .filter(i => i.person === currentUser);
+                const myItems = orders.flatMap(o => (o.items || []).map(i => ({...i, date: o.date, orderTitle: o.title, orderId: o.id})))
+                                        .filter(i => i.person === currentUser);
                 const totalItems = myItems.length;
                 const pendingItems = myItems.filter(i => !i.paid).length;
                 
@@ -902,61 +1196,24 @@
                 });
             }, [orders]);
 
-            const logisticsData = useMemo(() => {
-                const data = {};
-                users.forEach(u => {
-                    if (u === 'Gestore') return;
-                    data[u] = { 
-                        items: [], 
-                        totalDebt: 0, 
-                        totalPaid: 0, 
-                        lastItemTimestamp: 0 // Track the latest activity for sorting
-                    };
-                });
-                orders.forEach(order => {
-                    (order.items || []).forEach(item => {
-                        if (data[item.person]) {
-                            data[item.person].items.push({ ...item, orderDate: order.date, orderTitle: order.title, orderId: order.id });
-                            const price = parseFloat(item.price) || 0;
-                            if (item.paid) data[item.person].totalPaid += price;
-                            else data[item.person].totalDebt += price;
-                            
-                            // Update latest timestamp for sorting
-                            if (item.id > data[item.person].lastItemTimestamp) {
-                                data[item.person].lastItemTimestamp = item.id;
-                            }
-                        }
-                    });
-                });
-                return data;
-            }, [orders, users]);
-
-            // --- ACTIONS ---
             const initiateLogin = (user) => {
                 if (user === 'Gestore') {
                     setIsLoggingInAsManager(true); setManagerPassword(''); setLoginError('');
                 } else {
-                    // SAVE USER FOR AUTO-LOGIN
                     localStorage.setItem('svapo_last_user', user);
-                    
-                    // Trigger Welcome Screen
-                    setCurrentUser(user); // Set user immediately
-                    setShowWelcome(true); // Show welcome
-                    
+                    setCurrentUser(user);
+                    setShowWelcome(true); 
                     setTimeout(() => {
                         setView('dashboard');
-                        setShowWelcome(false); // Hide welcome after delay
-                    }, 2000); // 2 seconds delay
+                        setShowWelcome(false); 
+                    }, 2000); 
                 }
             };
 
             const submitManagerLogin = (e) => {
                 e.preventDefault();
                 if (managerPassword === '1234') {
-                    // SAVE MANAGER FOR AUTO-LOGIN
                     localStorage.setItem('svapo_last_user', 'Gestore');
-                    
-                    // Trigger Welcome Screen
                     setCurrentUser('Gestore'); 
                     setIsLoggingInAsManager(false);
                     setShowWelcome(true);
@@ -984,7 +1241,6 @@
                 }
             };
 
-            // ELIMINAZIONE UTENTE CON MODALE
             const deleteUser = (userToDelete) => {
                 if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
                 
@@ -1006,18 +1262,31 @@
                 );
             };
 
+            // --- FUNZIONE SALVATAGGIO PREZZI ---
+            const savePricing = async (newPricing) => {
+                try {
+                     await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                        pricing: newPricing
+                    });
+                    setPricing(newPricing);
+                    setIsPricingModalOpen(false);
+                    showInfo("Salvato", "Prezzi aggiornati per tutti gli utenti.");
+                } catch (e) {
+                    showInfo("Errore", "Impossibile salvare i prezzi: " + e.message);
+                }
+            };
+
             const createOrder = async () => {
                 const dateStr = new Date().toLocaleDateString('it-IT');
                 const newId = Date.now().toString();
                 setActiveOrderId(newId);
-                // MODIFICA V21: Salva il creatore dell'ordine per la privacy
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', newId), {
                     id: newId, 
                     title: `Ordine del ${dateStr}`, 
                     date: dateStr, 
                     items: [], 
                     status: 'active',
-                    creator: currentUser // Salva chi l'ha creato
+                    creator: currentUser 
                 });
             };
 
@@ -1043,14 +1312,6 @@
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, price: parseFloat(newPrice) || 0 } : item));
             };
 
-            const togglePaidStatus = async (orderId, itemId) => {
-                if (!isManager) return; 
-                const order = orders.find(o => o.id == orderId);
-                if (!order) return;
-                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, paid: !item.paid } : item));
-            };
-
-            // Generic status updater (for guest payment confirmation)
             const updateItemStatus = async (orderId, itemId, field, value) => {
                 const order = orders.find(o => o.id == orderId);
                 if (!order) return;
@@ -1063,7 +1324,6 @@
                 await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
             };
 
-            // ELIMINAZIONE ORDINE CON MODALE
             const deleteOrder = (orderId) => {
                 showConfirm(
                     "Elimina Ordine", 
@@ -1077,7 +1337,6 @@
                 );
             };
 
-            // RESET ORDINE CON MODALE
             const resetOrder = (orderId) => {
                 showConfirm(
                     "Reset Ordine",
@@ -1090,7 +1349,6 @@
                 );
             };
 
-            // RESET TOTALE APP CON MODALE (SOLO MANAGER)
             const factoryReset = () => {
                 if (!isManager) return;
                 
@@ -1106,7 +1364,7 @@
                             });
                             await batch.commit();
 
-                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: ['Gestore'], paymentRequests: {} });
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: ['Gestore'], paymentRequests: {}, pricing: DEFAULT_PRICING });
                             
                             showInfo("Reset Completato", "L'applicazione è tornata allo stato iniziale.");
                             setTimeout(() => window.location.reload(), 2000);
@@ -1119,14 +1377,7 @@
                 );
             };
 
-            const togglePaymentRequest = async (user) => {
-                const newRequests = { ...paymentRequests, [user]: !paymentRequests[user] };
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { paymentRequests: newRequests });
-            };
-
-            // --- NUOVA FUNZIONE: CONFERMA TUTTI I PAGAMENTI GUEST ---
             const confirmAllPayments = async () => {
-                // Trova tutti gli ordini con articoli dell'utente attuale non pagati e non confermati
                 const updates = [];
                 orders.forEach(order => {
                     const userItemsToUpdate = (order.items || []).filter(i => i.person === currentUser && !i.paid && !i.userConfirmedPayment);
@@ -1150,7 +1401,6 @@
                 }
             };
 
-            // --- NUOVA FUNZIONE: CONFERMA PAGAMENTI UTENTE LATO GESTORE ---
             const confirmUserPayments = async (user, pendingItems) => {
                 const updates = {}; 
 
@@ -1161,7 +1411,6 @@
                     }
                 });
 
-                // Update items in memory map
                 pendingItems.forEach(item => {
                     if (updates[item.orderId]) {
                         updates[item.orderId] = updates[item.orderId].map(i => 
@@ -1181,31 +1430,79 @@
                 }
             };
 
-            const downloadExcel = () => {
-                const data = [];
-                orders.forEach(o => {
-                    (o.items || []).forEach(i => {
-                        data.push({
-                            "ID Ordine": o.id,
-                            "Data": o.date,
-                            "Titolo Ordine": o.title,
-                            "Utente": i.person,
-                            "Articolo": i.link ? i.link : i.otherItems,
-                            "Specifiche": `${i.liquidMl || '-'}ml | ${i.nicotineMl || '-'}nic | ${i.vapeType || '-'}`,
-                            "Prezzo": i.price || 0,
-                            "Pagato": i.paid ? "SI" : "NO",
-                            "Acquistato": i.bought ? "SI" : "NO"
-                        });
-                    });
-                });
+            // --- GUEST DASHBOARD ACTIONS ---
+            const handleAddToFavorites = async (name) => {
+                setFavModalOpen(false);
+                if (!name || !itemToFav) return;
+                
+                const item = itemToFav;
+                const favItem = {
+                    id: Date.now(),
+                    name: name,
+                    link: item.link || '',
+                    // Use || '' or || null to prevent undefined
+                    liquidMl: item.liquidMl || '',
+                    nicotineMl: item.nicotineMl || '',
+                    vapeType: item.vapeType || '',
+                    otherItems: item.otherItems || ''
+                };
 
-                const ws = XLSX.utils.json_to_sheet(data);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Riepilogo Svapo");
-                XLSX.writeFile(wb, "svapo_manager_report.xlsx");
+                try {
+                    const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser);
+                    // Check if doc exists, if not setDoc creates it. arrayUnion works.
+                    await setDoc(ref, { items: arrayUnion(favItem) }, { merge: true });
+                    showInfo("Salvato", "Aggiunto agli Aromi Preferiti!");
+                    setItemToFav(null);
+                } catch (error) {
+                    console.error("Error saving favorite:", error);
+                    showInfo("Errore", "Impossibile salvare il preferito: " + error.message);
+                }
             };
 
-            // --- UI ---
+            const openFavModal = (item) => {
+                setItemToFav(item);
+                setFavModalOpen(true);
+            }
+
+            const handleReorderSingle = async (item) => {
+                if (activeOrders.length === 0) {
+                    return showInfo("Nessun Ordine Attivo", "Non ci sono ordini aperti in questo momento per aggiungere l'articolo.");
+                }
+                
+                // Add to the most recent active order
+                const targetOrder = activeOrders[0]; 
+                
+                // Create new item based on old one (reset status flags)
+                const newItem = {
+                    ...item,
+                    id: Date.now(),
+                    person: currentUser,
+                    paid: false,
+                    bought: false,
+                    userConfirmedPayment: false
+                };
+                // Remove meta from previous order if present
+                delete newItem.orderId;
+                delete newItem.orderTitle;
+                delete newItem.date;
+
+                await addItemToOrder(targetOrder.id, newItem);
+                showInfo("Fatto", `Articolo aggiunto all'ordine: ${targetOrder.title}`);
+            };
+
+            const handleDeleteHistoryItem = (item) => {
+                showConfirm(
+                    "Elimina dallo Storico",
+                    "Sei sicuro? Se elimini questo articolo, verrà rimosso anche dal totale dei debiti/pagamenti nel sistema del gestore.",
+                    async () => {
+                        await removeItemFromOrder(item.orderId, item.id);
+                    },
+                    true, // Danger
+                    "Elimina"
+                );
+            };
+
+            // --- UI RENDER ---
             if (!isConfigured) return <div className="p-10 text-center">Configurazione mancante</div>;
             if (connectionError) return <div className="p-10 text-center text-red-500">Errore: {connectionError}</div>;
             if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-950 animate-pulse">Connessione Cloud...</div>;
@@ -1244,20 +1541,15 @@
                                 <div className="grid grid-cols-2 gap-3 mb-6">
                                     {users.map(u => (
                                         <div key={u} className="relative group">
-                                            {/* Pulsante Principale - Accesso */}
                                             <button onClick={() => initiateLogin(u)} className="w-full relative p-4 rounded-xl border-2 border-slate-100 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all font-medium text-slate-700 dark:text-slate-200 flex flex-col items-center gap-2">
                                                 <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold">{u.charAt(0)}</div>
                                                 {u}
                                                 {u === 'Gestore' && <Lock size={12} className="absolute top-2 right-2 text-slate-400" />}
                                             </button>
                                             
-                                            {/* Pulsante Eliminazione - Sempre visibile e sopraelevato */}
                                             {u !== 'Gestore' && (
                                                 <button 
-                                                    onClick={(e) => { 
-                                                        e.stopPropagation(); 
-                                                        deleteUser(u); 
-                                                    }}
+                                                    onClick={(e) => { e.stopPropagation(); deleteUser(u); }}
                                                     className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-full shadow-lg border-2 border-white dark:border-slate-800 z-50 hover:bg-red-600 transition-transform active:scale-90"
                                                     aria-label="Elimina utente"
                                                 >
@@ -1280,6 +1572,9 @@
             return (
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0 relative">
                     <ConfirmDialog {...modalConfig} />
+                    <PricingModal isOpen={isPricingModalOpen} onClose={() => setIsPricingModalOpen(false)} currentPricing={pricing} onSave={savePricing} />
+                    <AddToFavoriteModal isOpen={favModalOpen} onClose={() => setFavModalOpen(false)} onConfirm={handleAddToFavorites} item={itemToFav} />
+                    
                     <div className="max-w-4xl mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col border-x border-slate-100 dark:border-slate-800 relative">
                         
                         {/* HEADER */}
@@ -1314,6 +1609,12 @@
                                                 <button onClick={() => { setView('monthly-report'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg"><Calendar size={18}/></div> Resoconto Spese
                                                 </button>
+                                                <button onClick={() => { setView('favorites'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-pink-100 dark:bg-pink-900/30 text-pink-600 rounded-lg"><Heart size={18}/></div> Aromi Preferiti
+                                                </button>
+                                                <button onClick={() => { setView('stats'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-600 rounded-lg"><BarChart3 size={18}/></div> Statistiche
+                                                </button>
                                                 <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
                                                 </button>
@@ -1325,6 +1626,15 @@
                                             <>
                                                 <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
+                                                </button>
+                                                <button onClick={() => { setView('calculator'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 rounded-lg"><Calculator size={18}/></div> Calcolatore Mix
+                                                </button>
+                                                <button onClick={() => { setView('warehouse'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-lg"><Box size={18}/></div> Magazzino
+                                                </button>
+                                                <button onClick={() => { setIsPricingModalOpen(true); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/10 text-emerald-600 text-sm font-medium">
+                                                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-lg"><DollarSign size={18}/></div> Configura Prezzi
                                                 </button>
                                                 <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
                                                 <button onClick={() => { factoryReset(); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/10 text-red-500 text-sm font-medium">
@@ -1370,6 +1680,8 @@
                                     onRemove={removeItemFromOrder} 
                                     onDelete={deleteOrder} 
                                     onUpdateStatus={updateItemStatus} 
+                                    currentPricing={pricing} // Passaggio prezzi dinamici
+                                    allOrders={orders} 
                                 />
                             ) : (
                                 // --- MAIN VIEW CONTENT ---
@@ -1536,8 +1848,18 @@
                                                                         <p className="font-bold text-slate-800 dark:text-white truncate">{item.link || 'Oggetto senza link'}</p>
                                                                         <p className="text-xs text-slate-500 dark:text-slate-400">{item.date}</p>
                                                                     </div>
-                                                                    <div className="text-right flex-shrink-0">
-                                                                        <p className={`text-[10px] font-bold uppercase tracking-wider ${item.paid ? 'text-emerald-500' : 'text-orange-400'}`}>{item.paid ? 'Saldato' : 'Da Saldare'}</p>
+                                                                    
+                                                                    {/* Action Buttons */}
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button onClick={() => handleReorderSingle(item)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-blue-500 transition-colors" title="Riordina">
+                                                                            <RotateCcw size={16} />
+                                                                        </button>
+                                                                        <button onClick={() => openFavModal(item)} className="p-2 rounded-lg bg-pink-50 dark:bg-pink-900/20 text-pink-400 hover:text-pink-600 transition-colors" title="Preferiti">
+                                                                            <Heart size={16} />
+                                                                        </button>
+                                                                        <button onClick={() => handleDeleteHistoryItem(item)} className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-400 hover:text-red-600 transition-colors" title="Elimina">
+                                                                            <Trash2 size={16} />
+                                                                        </button>
                                                                     </div>
                                                                 </div>
                                                             ))}
@@ -1548,7 +1870,14 @@
                                         </div>
                                     )}
 
-                                    {/* NUOVA VIEW: CONFERMA PAGAMENTI (SOLO GESTORE) */}
+                                    {/* NUOVE VIEW GESTORE */}
+                                    {view === 'calculator' && isManager && <MixingCalculator onBack={() => setView('dashboard')} />}
+                                    {view === 'warehouse' && isManager && <WarehouseManager onBack={() => setView('dashboard')} />}
+
+                                    {/* NUOVE VIEW UTENTI */}
+                                    {view === 'favorites' && !isManager && <FavoritesSection onBack={() => setView('dashboard')} currentUser={currentUser} onAddToActiveOrder={handleReorderSingle} />}
+                                    {view === 'stats' && !isManager && <UserStatistics orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
+
                                     {view === 'payments' && isManager && (
                                         <div className="pb-20 animate-in p-4">
                                             <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Banknote className="text-orange-500"/> Conferma Pagamenti</h2>
@@ -1597,7 +1926,6 @@
 
                                     {view === 'monthly-report' && <MonthlyReport orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
                                     
-                                    
                                     {view === 'manager-archive' && <OrderArchive orders={groupedArchivedOrders} currentUser={currentUser} isManager={isManager} onBack={() => setView('dashboard')} onDelete={deleteOrder} onReset={resetOrder} onClickOrder={setActiveOrderId} />}
 
                                     {view === 'orders' && !isManager && (
@@ -1631,7 +1959,19 @@
                                                     </div>
                                                 </>
                                             ) : (
-                                                <OrderDetail order={orders.find(o => o.id == activeOrderId)} users={users} currentUser={currentUser} isManager={isManager} onBack={() => setActiveOrderId(null)} onAdd={addItemToOrder} onRemove={removeItemFromOrder} onDelete={deleteOrder} onUpdateStatus={updateItemStatus} />
+                                                <OrderDetail 
+                                                    order={orders.find(o => o.id == activeOrderId)} 
+                                                    users={users} 
+                                                    currentUser={currentUser} 
+                                                    isManager={isManager} 
+                                                    onBack={() => setActiveOrderId(null)} 
+                                                    onAdd={addItemToOrder} 
+                                                    onRemove={removeItemFromOrder} 
+                                                    onDelete={deleteOrder} 
+                                                    onUpdateStatus={updateItemStatus} 
+                                                    currentPricing={pricing}
+                                                    allOrders={orders}
+                                                />
                                             )}
                                         </div>
                                     )}
