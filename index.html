@@ -71,9 +71,9 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box, Edit2, ClipboardList, Globe, Activity,
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box, Edit2, ClipboardList, Globe, Activity, Truck, Book
             // NUOVE ICONE PACCHETTO SVAPO
-            Cloud, Zap, Droplets, FlaskConical, Sparkles, Layers, Syringe
+            , Cloud, Zap, Droplets, FlaskConical, Sparkles, Layers, Syringe
         } from 'lucide-react';
         
         // --- FIREBASE IMPORTS ---
@@ -203,6 +203,35 @@
             </div>
         );
 
+        // --- TRACKING MODAL ---
+        const TrackingModal = ({ isOpen, onClose, onSave, initialValue }) => {
+            const [val, setVal] = useState(initialValue || '');
+            useEffect(() => setVal(initialValue || ''), [initialValue, isOpen]);
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border dark:border-slate-700 animate-in zoom-in-95">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-900 dark:text-white"><Truck size={24} className="text-blue-500"/> Tracking Spedizione</h3>
+                        <p className="text-sm text-slate-500 mb-4">Inserisci il link al corriere o il codice di tracciamento per questo ordine.</p>
+                        <input 
+                            autoFocus
+                            type="text" 
+                            className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mb-4 font-bold outline-none ring-2 ring-transparent focus:ring-blue-500 transition-all text-sm" 
+                            placeholder="https://... o Codice" 
+                            value={val} 
+                            onChange={e => setVal(e.target.value)} 
+                        />
+                        <div className="flex gap-3">
+                            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Annulla</button>
+                            <button onClick={() => onSave(val)} className="flex-1 py-3 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30">Salva</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const AddToFavoriteModal = ({ isOpen, onClose, onConfirm, item }) => {
             const [name, setName] = useState('');
             useEffect(() => { if(isOpen) setName(''); }, [isOpen]);
@@ -289,8 +318,8 @@
             const [newItemName, setNewItemName] = useState('');
             const [newItemNote, setNewItemNote] = useState('');
 
-            // FIX: Usiamo il path PUBBLICO per evitare problemi di permessi con auth anonima
             useEffect(() => {
+                // FIXED: Utilizza un percorso pubblico per evitare errori di permessi con autenticazione anonima
                 const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'wishlists', currentUser), (s) => {
                     if(s.exists()) setItems(s.data().items || []);
                 });
@@ -306,13 +335,13 @@
                     note: newItemNote,
                     date: new Date().toLocaleDateString('it-IT')
                 };
-                // FIX: Scrittura su path pubblico
+                // FIXED: Utilizza un percorso pubblico
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'wishlists', currentUser), { items: arrayUnion(newItem) }, { merge: true });
                 setNewItemName(''); setNewItemNote('');
             };
 
             const removeItem = async (item) => {
-                // FIX: Scrittura su path pubblico
+                // FIXED: Utilizza un percorso pubblico
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'wishlists', currentUser), { items: arrayRemove(item) }, { merge: true });
             };
 
@@ -550,378 +579,103 @@
             );
         };
 
-        const UserActivityHub = ({ orders, currentUser, onBack, showConfirm }) => {
+        const CoilTracker = ({ onBack, currentUser, orders }) => {
             const [lastChangeDate, setLastChangeDate] = useState(null);
-            const [coilHistory, setCoilHistory] = useState([]);
-            const [liquidLogs, setLiquidLogs] = useState([]); // NUOVO STATO PER I LOG LIQUIDI
             const [isLoading, setIsLoading] = useState(true);
 
-            // --- STATI FORM COIL ---
-            const [isCoilFormOpen, setIsCoilFormOpen] = useState(false);
-            const [coilFormDate, setCoilFormDate] = useState('');
-            const [coilFormCost, setCoilFormCost] = useState('');
-
-            // --- STATI FORM LIQUIDI ---
-            const [isLiquidFormOpen, setIsLiquidFormOpen] = useState(false);
-            const [liquidFormDate, setLiquidFormDate] = useState('');
-            const [liquidFormMl, setLiquidFormMl] = useState('');
-            
-            // --- STATI MODIFICA ---
-            const [editingItem, setEditingItem] = useState(null);
-
-            // Carica dati
+            // Carica la data dal database (Percorso Pubblico per evitare permessi user/{uid})
             useEffect(() => {
                 const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser);
                 const unsub = onSnapshot(docRef, (s) => {
-                    if (s.exists()) {
-                        const data = s.data();
-                        setLastChangeDate(data.lastCoilChange);
-                        setCoilHistory(data.history || []);
-                        setLiquidLogs(data.liquidLogs || []); // Carica storico liquidi indipendente
+                    if (s.exists() && s.data().lastCoilChange) {
+                        setLastChangeDate(s.data().lastCoilChange);
                     }
                     setIsLoading(false);
                 });
                 return () => unsub();
             }, [currentUser]);
 
-            // STATISTICHE LIQUIDI (SPESA BASATA SUGLI ORDINI)
-            const liquidStats = useMemo(() => {
-                let totalSpent = 0;
-                orders.forEach(o => {
-                    (o.items || []).filter(i => i.person === currentUser && (i.bought || i.paid)).forEach(i => {
-                        totalSpent += (parseFloat(i.price) || 0);
-                    });
-                });
-                return { totalSpent };
-            }, [orders, currentUser]);
+            const handleResetCoil = async () => {
+                const now = new Date().toISOString();
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                    lastCoilChange: now 
+                }, { merge: true });
+                setLastChangeDate(now);
+            };
 
-            // TOTALE SVAPATO (SOMMA DEI LOG MANUALI)
-            const totalVapedMl = useMemo(() => {
-                return liquidLogs.reduce((acc, curr) => acc + (parseFloat(curr.ml) || 0), 0);
-            }, [liquidLogs]);
+            const stats = useMemo(() => {
+                if (!lastChangeDate) return { days: 0, ml: 0 };
 
-            // GIORNI COIL ATTUALE
-            const currentCoilDays = useMemo(() => {
-                if (!lastChangeDate) return 0;
                 const start = new Date(lastChangeDate);
                 const now = new Date();
                 const diffTime = Math.abs(now - start);
-                return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-            }, [lastChangeDate]);
+                const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
 
-            // --- GESTIONE CAMBIO COIL ---
-            const openCoilForm = () => {
-                const today = new Date().toISOString().split('T')[0];
-                setCoilFormDate(today);
-                setCoilFormCost('');
-                setIsCoilFormOpen(true);
-                setIsLiquidFormOpen(false); // Chiude l'altro form se aperto
-                setEditingItem(null);
-            };
-
-            const handleCoilSubmit = async (e) => {
-                e.preventDefault();
-                const newDateIso = new Date(coilFormDate).toISOString();
+                let ml = 0;
                 
-                let daysLasted = 0;
-                if (lastChangeDate) {
-                    const start = new Date(lastChangeDate);
-                    const end = new Date(coilFormDate);
-                    const diff = Math.abs(end - start);
-                    daysLasted = Math.ceil(diff / (1000 * 60 * 60 * 24));
-                }
-
-                const historyEntry = {
-                    dateReplaced: newDateIso,
-                    startDate: lastChangeDate || newDateIso,
-                    daysLasted: daysLasted > 0 ? daysLasted : currentCoilDays,
-                    cost: parseFloat(coilFormCost) || 0
-                };
-
-                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
-                    lastCoilChange: newDateIso,
-                    history: arrayUnion(historyEntry)
-                }, { merge: true });
-
-                setIsCoilFormOpen(false);
-            };
-
-            // --- GESTIONE AGGIUNTA LIQUIDO ---
-            const openLiquidForm = () => {
-                const today = new Date().toISOString().split('T')[0];
-                setLiquidFormDate(today);
-                setLiquidFormMl('');
-                setIsLiquidFormOpen(true);
-                setIsCoilFormOpen(false); // Chiude l'altro form
-                setEditingItem(null);
-            };
-
-            const handleLiquidSubmit = async (e) => {
-                e.preventDefault();
-                if (!liquidFormMl) return;
-
-                const newLog = {
-                    id: Date.now(),
-                    date: new Date(liquidFormDate).toISOString(),
-                    ml: parseFloat(liquidFormMl)
-                };
-
-                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
-                    liquidLogs: arrayUnion(newLog)
-                }, { merge: true });
-
-                setIsLiquidFormOpen(false);
-            };
-
-            // --- GESTIONE ELIMINAZIONE ---
-            const deleteActivity = (entry) => {
-                showConfirm(
-                    "Elimina Attività",
-                    "Sei sicuro di voler eliminare questa voce dal diario?",
-                    async () => {
-                        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser);
-                        
-                        // Per sicurezza, leggiamo il documento corrente per filtrare l'array corretto
-                        const snap = await getDoc(ref);
-                        if (!snap.exists()) return;
-                        const data = snap.data();
-
-                        if (entry.type === 'coil') {
-                            // Filtra per data (assumendo sia unica o sufficiente) o riferimento oggetto
-                            const newHistory = (data.history || []).filter(h => h.dateReplaced !== entry.dateReplaced);
-                             await setDoc(ref, { history: newHistory }, { merge: true });
-                        } else {
-                            // Filtra per ID
-                            const newLogs = (data.liquidLogs || []).filter(l => l.id !== entry.id);
-                            await setDoc(ref, { liquidLogs: newLogs }, { merge: true });
-                        }
-                    },
-                    true,
-                    "Elimina"
-                );
-            };
-
-            // --- GESTIONE MODIFICA ---
-            const openEdit = (entry) => {
-                setEditingItem({
-                    ...entry,
-                    // Pre-fill fields formats
-                    formDate: new Date(entry.date).toISOString().split('T')[0],
-                    formVal: entry.type === 'coil' ? entry.cost : entry.ml
+                // Calcola ML dagli ordini ACQUISTATI (bought=true) dopo la data di cambio
+                orders.forEach(order => {
+                    const [d, m, y] = order.date.split('/');
+                    const orderDate = new Date(y, m - 1, d);
+                    
+                    if (orderDate >= new Date(start.setHours(0,0,0,0))) {
+                        (order.items || []).forEach(item => {
+                            if (item.person === currentUser && item.bought && item.liquidMl) {
+                                ml += parseFloat(item.liquidMl);
+                            }
+                        });
+                    }
                 });
-            };
 
-            const saveEdit = async (e) => {
-                e.preventDefault();
-                if (!editingItem) return;
-
-                const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser);
-                const snap = await getDoc(ref);
-                if (!snap.exists()) return;
-                const data = snap.data();
-                
-                const newDateIso = new Date(editingItem.formDate).toISOString();
-                const newVal = parseFloat(editingItem.formVal);
-
-                if (editingItem.type === 'coil') {
-                    const newHistory = (data.history || []).map(h => {
-                        // Match usando dateReplaced originale
-                        if (h.dateReplaced === editingItem.dateReplaced) {
-                            return { ...h, dateReplaced: newDateIso, cost: newVal };
-                        }
-                        return h;
-                    });
-                    await setDoc(ref, { history: newHistory }, { merge: true });
-                } else {
-                    const newLogs = (data.liquidLogs || []).map(l => {
-                        if (l.id === editingItem.id) {
-                            return { ...l, date: newDateIso, ml: newVal };
-                        }
-                        return l;
-                    });
-                    await setDoc(ref, { liquidLogs: newLogs }, { merge: true });
-                }
-                setEditingItem(null);
-            };
-
+                return { days, ml };
+            }, [lastChangeDate, orders, currentUser]);
 
             return (
                 <div className="pb-20 animate-in p-4">
                     <div className="flex items-center gap-2 mb-6">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
-                        <h2 className="text-xl font-bold">Diario Svapo</h2>
+                        <h2 className="text-xl font-bold">Stato Resistenza</h2>
                     </div>
 
-                    {/* MODALE DI MODIFICA */}
-                    {editingItem && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border dark:border-slate-700">
-                                <h3 className="text-lg font-bold mb-4">Modifica {editingItem.type === 'coil' ? 'Resistenza' : 'Liquido'}</h3>
-                                <form onSubmit={saveEdit} className="space-y-4">
-                                    <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-400">Data</label>
-                                        <input type="date" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl font-bold" value={editingItem.formDate} onChange={e => setEditingItem({...editingItem, formDate: e.target.value})} required />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-400">{editingItem.type === 'coil' ? 'Costo (€)' : 'Quantità (ml)'}</label>
-                                        <input type="number" step={editingItem.type === 'coil' ? "0.01" : "1"} className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl font-bold" value={editingItem.formVal} onChange={e => setEditingItem({...editingItem, formVal: e.target.value})} required />
-                                    </div>
-                                    <div className="flex gap-2 pt-2">
-                                        <button type="button" onClick={() => setEditingItem(null)} className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Annulla</button>
-                                        <button type="submit" className="flex-1 py-3 rounded-xl font-bold bg-blue-600 text-white">Salva</button>
-                                    </div>
-                                </form>
-                            </div>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-lg border dark:border-slate-700 text-center mb-6 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Zap size={100} />
                         </div>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         
-                        {/* CARD 1: HARDWARE (COIL) */}
-                        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-lg border dark:border-slate-700 relative overflow-hidden flex flex-col h-full">
-                             <div className="absolute top-0 right-0 p-4 opacity-5 dark:opacity-10 text-indigo-500">
-                                <Zap size={100} />
-                            </div>
-                            <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
-                                <Zap size={18} className="text-yellow-500"/> Gestione Hardware
-                            </h3>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Attiva da</p>
+                        <h1 className="text-6xl font-black text-indigo-600 dark:text-indigo-400 mb-2">
+                            {stats.days} <span className="text-lg font-bold text-slate-400">giorni</span>
+                        </h1>
+                        
+                        {lastChangeDate && (
+                            <p className="text-xs text-slate-400">
+                                Cambiata il {new Date(lastChangeDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', hour: '2-digit', minute:'2-digit' })}
+                            </p>
+                        )}
+                    </div>
 
-                            <div className="text-center mb-6">
-                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Resistenza Attuale</p>
-                                <h1 className="text-5xl font-black text-slate-800 dark:text-white mb-1">
-                                    {currentCoilDays} <span className="text-lg font-bold text-slate-400">gg</span>
-                                </h1>
-                                {lastChangeDate ? (
-                                    <p className="text-xs text-slate-400">Installata il {new Date(lastChangeDate).toLocaleDateString()}</p>
-                                ) : (
-                                    <p className="text-xs text-slate-400">Nessuna resistenza attiva</p>
-                                )}
-                            </div>
-
-                            <div className="mt-auto">
-                                {!isCoilFormOpen ? (
-                                    <button 
-                                        onClick={openCoilForm}
-                                        className="w-full py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold shadow-md flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all text-sm"
-                                    >
-                                        <RefreshCcw size={16} /> CAMBIA RESISTENZA
-                                    </button>
-                                ) : (
-                                    <form onSubmit={handleCoilSubmit} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-600 text-left animate-in fade-in">
-                                        <h4 className="font-bold text-sm mb-3">Nuova Resistenza</h4>
-                                        <div className="space-y-3 mb-4">
-                                            <div>
-                                                <label className="text-[10px] uppercase font-bold text-slate-400">Data Cambio</label>
-                                                <input type="date" required className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={coilFormDate} onChange={e => setCoilFormDate(e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] uppercase font-bold text-slate-400">Costo (€)</label>
-                                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={coilFormCost} onChange={e => setCoilFormCost(e.target.value)} />
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button type="button" onClick={() => setIsCoilFormOpen(false)} className="flex-1 py-2 rounded-xl text-slate-500 font-bold bg-slate-200 dark:bg-slate-800 text-xs">Annulla</button>
-                                            <button type="submit" className="flex-1 py-2 rounded-xl text-white font-bold bg-indigo-600 text-xs">Conferma</button>
-                                        </div>
-                                    </form>
-                                )}
-                            </div>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/50 mb-8 flex items-center gap-4">
+                        <div className="bg-blue-100 dark:bg-blue-800 p-3 rounded-xl text-blue-600 dark:text-blue-300">
+                            <Droplets size={24} />
                         </div>
-
-                        {/* CARD 2: LIQUIDI (CONSUMO INDIPENDENTE) */}
-                        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-lg border dark:border-slate-700 relative overflow-hidden flex flex-col h-full">
-                            <div className="absolute top-0 right-0 p-4 opacity-5 dark:opacity-10 text-blue-500">
-                                <Droplets size={100} />
-                            </div>
-                            <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
-                                <Droplets size={18} className="text-blue-500"/> Consumo Liquidi
-                            </h3>
-
-                            <div className="grid grid-cols-2 gap-4 mb-4">
-                                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl">
-                                    <p className="text-blue-500 text-[10px] font-bold uppercase mb-1">Totale Svapato</p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-white">{totalVapedMl.toFixed(0)} <span className="text-sm text-slate-400">ml</span></p>
-                                </div>
-                                <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl">
-                                    <p className="text-emerald-500 text-[10px] font-bold uppercase mb-1">Spesa Liquidi</p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-white">€{liquidStats.totalSpent.toFixed(0)}</p>
-                                </div>
-                            </div>
-                            
-                            <div className="mt-auto">
-                                {!isLiquidFormOpen ? (
-                                    <button 
-                                        onClick={openLiquidForm}
-                                        className="w-full py-3 rounded-2xl bg-blue-600 text-white font-bold shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all text-sm"
-                                    >
-                                        <Plus size={16} /> AGGIUNGI CONSUMO
-                                    </button>
-                                ) : (
-                                    <form onSubmit={handleLiquidSubmit} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-600 text-left animate-in fade-in">
-                                        <h4 className="font-bold text-sm mb-3">Registra Consumo</h4>
-                                        <div className="space-y-3 mb-4">
-                                            <div>
-                                                <label className="text-[10px] uppercase font-bold text-slate-400">Data</label>
-                                                <input type="date" required className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={liquidFormDate} onChange={e => setLiquidFormDate(e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] uppercase font-bold text-slate-400">Quantità (ml)</label>
-                                                <input type="number" step="1" placeholder="Es. 10" className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={liquidFormMl} onChange={e => setLiquidFormMl(e.target.value)} required />
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button type="button" onClick={() => setIsLiquidFormOpen(false)} className="flex-1 py-2 rounded-xl text-slate-500 font-bold bg-slate-200 dark:bg-slate-800 text-xs">Annulla</button>
-                                            <button type="submit" className="flex-1 py-2 rounded-xl text-white font-bold bg-blue-600 text-xs">Salva</button>
-                                        </div>
-                                    </form>
-                                )}
-                            </div>
+                        <div>
+                            <p className="text-xs text-blue-500 dark:text-blue-400 font-bold uppercase">Consumo Stimato</p>
+                            <p className="text-2xl font-bold text-slate-800 dark:text-white">{stats.ml} ml</p>
+                            <p className="text-[10px] text-slate-400 leading-tight mt-1">Basato sugli acquisti segnati come "PRESO" dopo il cambio coil.</p>
                         </div>
                     </div>
 
-                    {/* LISTA ULTIMI INSERIMENTI CON AZIONI */}
-                    <div className="mt-8">
-                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                            <History size={18} className="text-slate-400"/> Attività Recente
-                        </h3>
-                        <div className="space-y-2">
-                            {/* Merge and sort history */}
-                            {[
-                                ...coilHistory.map(c => ({ ...c, type: 'coil', date: c.dateReplaced })),
-                                ...liquidLogs.map(l => ({ ...l, type: 'liquid', date: l.date }))
-                            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10).map((entry, idx) => (
-                                <div key={idx} className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-3 rounded-xl shadow-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${entry.type === 'coil' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30'}`}>
-                                            {entry.type === 'coil' ? <Zap size={16}/> : <Droplets size={16}/>}
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-sm text-slate-800 dark:text-white">
-                                                {entry.type === 'coil' ? 'Cambio Resistenza' : 'Consumo Liquido'}
-                                            </p>
-                                            <p className="text-xs text-slate-400">{new Date(entry.date).toLocaleDateString()}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="text-right mr-2">
-                                            {entry.type === 'coil' ? (
-                                                <span className="font-bold text-slate-600 dark:text-slate-300">€{entry.cost.toFixed(2)}</span>
-                                            ) : (
-                                                <span className="font-bold text-blue-500">{entry.ml} ml</span>
-                                            )}
-                                        </div>
-                                        
-                                        {/* Tasti Modifica / Elimina */}
-                                        <button onClick={() => openEdit(entry)} className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"><Edit2 size={16}/></button>
-                                        <button onClick={() => deleteActivity(entry)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16}/></button>
-                                    </div>
-                                </div>
-                            ))}
-                            {coilHistory.length === 0 && liquidLogs.length === 0 && (
-                                <p className="text-center text-slate-400 text-sm py-4">Nessuna attività registrata.</p>
-                            )}
-                        </div>
-                    </div>
+                    <button 
+                        onClick={() => {
+                            if(confirm("Confermi di aver cambiato la resistenza adesso? Il conteggio verrà azzerato.")) {
+                                handleResetCoil();
+                            }
+                        }}
+                        className="w-full py-4 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold shadow-xl flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all"
+                    >
+                        <RefreshCcw size={20} />
+                        HO CAMBIATO LA COIL OGGI
+                    </button>
                 </div>
             );
         };
@@ -1374,19 +1128,996 @@
             );
         };
 
+        const UserActivityHub = ({ orders, currentUser, onBack }) => {
+            const [lastChangeDate, setLastChangeDate] = useState(null);
+            const [coilHistory, setCoilHistory] = useState([]);
+            const [liquidLogs, setLiquidLogs] = useState([]); 
+            const [isLoading, setIsLoading] = useState(true);
+
+            // --- STATI FORM COIL ---
+            const [isCoilFormOpen, setIsCoilFormOpen] = useState(false);
+            const [coilFormDate, setCoilFormDate] = useState('');
+            const [coilFormCost, setCoilFormCost] = useState('');
+
+            // --- STATI FORM LIQUIDI ---
+            const [isLiquidFormOpen, setIsLiquidFormOpen] = useState(false);
+            const [liquidFormDate, setLiquidFormDate] = useState('');
+            const [liquidFormMl, setLiquidFormMl] = useState('');
+            // --------------------------
+
+            // Carica dati
+            useEffect(() => {
+                const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser);
+                const unsub = onSnapshot(docRef, (s) => {
+                    if (s.exists()) {
+                        const data = s.data();
+                        setLastChangeDate(data.lastCoilChange);
+                        setCoilHistory(data.history || []);
+                        setLiquidLogs(data.liquidLogs || []); // Carica storico liquidi indipendente
+                    }
+                    setIsLoading(false);
+                });
+                return () => unsub();
+            }, [currentUser]);
+
+            // STATISTICHE ACQUISTI (SPESA E ML BASATI SUGLI ORDINI)
+            const purchaseStats = useMemo(() => {
+                let totalSpent = 0;
+                let totalMlPurchased = 0;
+                orders.forEach(o => {
+                    // Consideriamo solo ordini 'bought' (presi) o 'paid' (pagati)
+                    (o.items || []).filter(i => i.person === currentUser && (i.bought || i.paid)).forEach(i => {
+                        totalSpent += (parseFloat(i.price) || 0);
+                        if (i.liquidMl) {
+                            totalMlPurchased += (parseFloat(i.liquidMl) || 0);
+                        }
+                    });
+                });
+                return { totalSpent, totalMlPurchased };
+            }, [orders, currentUser]);
+
+            // STATISTICHE SVAPO REALE (BASATE SOLO SULLO STORICO INSERITO DALL'UTENTE)
+            const actualVapedStats = useMemo(() => {
+                const totalMl = liquidLogs.reduce((acc, curr) => acc + (parseFloat(curr.ml) || 0), 0);
+                return { totalMl };
+            }, [liquidLogs]);
+
+            // STATISTICHE COIL ATTUALE (SOLO GIORNI)
+            const currentCoilDays = useMemo(() => {
+                if (!lastChangeDate) return 0;
+                const start = new Date(lastChangeDate);
+                const now = new Date();
+                const diffTime = Math.abs(now - start);
+                return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            }, [lastChangeDate]);
+
+            // --- APERTURA FORM ---
+            const openResetForm = () => {
+                const today = new Date().toISOString().split('T')[0];
+                setCoilFormDate(today);
+                setCoilFormCost('');
+                setIsCoilFormOpen(true);
+            };
+
+            const openCoilForm = () => {
+                const today = new Date().toISOString().split('T')[0];
+                setCoilFormDate(today);
+                setCoilFormCost('');
+                setIsCoilFormOpen(true);
+                setIsLiquidFormOpen(false); // Chiude l'altro form se aperto
+            };
+
+            // --- SALVATAGGIO DATI ---
+            const handleCoilSubmit = async (e) => {
+                e.preventDefault();
+                
+                const newDateIso = new Date(coilFormDate).toISOString();
+                
+                // Calcolo giorni effettivi basato sulla data inserita dall'utente
+                let daysLasted = 0;
+                if (lastChangeDate) {
+                    const start = new Date(lastChangeDate);
+                    const end = new Date(coilFormDate);
+                    const diff = Math.abs(end - start);
+                    daysLasted = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                }
+
+                // Crea voce di storico
+                const historyEntry = {
+                    dateReplaced: newDateIso,
+                    startDate: lastChangeDate || newDateIso,
+                    daysLasted: daysLasted > 0 ? daysLasted : currentCoilDays,
+                    cost: parseFloat(coilFormCost) || 0
+                };
+
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                    lastCoilChange: newDateIso,
+                    history: arrayUnion(historyEntry)
+                }, { merge: true });
+
+                setIsCoilFormOpen(false);
+            };
+
+            // --- GESTIONE AGGIUNTA LIQUIDO ---
+            const openLiquidForm = () => {
+                const today = new Date().toISOString().split('T')[0];
+                setLiquidFormDate(today);
+                setLiquidFormMl('');
+                setIsLiquidFormOpen(true);
+                setIsCoilFormOpen(false); // Chiude l'altro form
+            };
+
+            const handleLiquidSubmit = async (e) => {
+                e.preventDefault();
+                if (!liquidFormMl) return;
+
+                const newLog = {
+                    id: Date.now(),
+                    date: new Date(liquidFormDate).toISOString(),
+                    ml: parseFloat(liquidFormMl)
+                };
+
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                    liquidLogs: arrayUnion(newLog)
+                }, { merge: true });
+
+                setIsLiquidFormOpen(false);
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Diario Svapo</h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        
+                        {/* SEZIONE 1: HARDWARE / COIL */}
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-lg border dark:border-slate-700 relative overflow-hidden flex flex-col h-full">
+                             <div className="absolute top-0 right-0 p-4 opacity-5 dark:opacity-10 text-indigo-500">
+                                <Zap size={100} />
+                            </div>
+                            <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                                <Zap size={18} className="text-yellow-500"/> Gestione Hardware
+                            </h3>
+
+                            <div className="text-center mb-6">
+                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Resistenza Attuale</p>
+                                <h1 className="text-5xl font-black text-slate-800 dark:text-white mb-1">
+                                    {currentCoilDays} <span className="text-lg font-bold text-slate-400">gg</span>
+                                </h1>
+                                {lastChangeDate ? (
+                                    <p className="text-xs text-slate-400">Installata il {new Date(lastChangeDate).toLocaleDateString()}</p>
+                                ) : (
+                                    <p className="text-xs text-slate-400">Nessuna resistenza attiva</p>
+                                )}
+                            </div>
+
+                            <div className="mt-auto">
+                                {!isCoilFormOpen ? (
+                                    <button 
+                                        onClick={openCoilForm}
+                                        className="w-full py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold shadow-md flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all text-sm"
+                                    >
+                                        <RefreshCcw size={16} /> CAMBIA RESISTENZA
+                                    </button>
+                                ) : (
+                                    <form onSubmit={handleCoilSubmit} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-600 text-left animate-in fade-in">
+                                        <h4 className="font-bold text-sm mb-3">Nuova Resistenza</h4>
+                                        <div className="space-y-3 mb-4">
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-slate-400">Data Cambio</label>
+                                                <input type="date" required className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={coilFormDate} onChange={e => setCoilFormDate(e.target.value)} />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-slate-400">Costo (€)</label>
+                                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={coilFormCost} onChange={e => setCoilFormCost(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => setIsCoilFormOpen(false)} className="flex-1 py-2 rounded-xl text-slate-500 font-bold bg-slate-200 dark:bg-slate-800 text-xs">Annulla</button>
+                                            <button type="submit" className="flex-1 py-2 rounded-xl text-white font-bold bg-indigo-600 text-xs">Conferma</button>
+                                        </div>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* SEZIONE 2: CONSUMO LIQUIDI MANUALE */}
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-lg border dark:border-slate-700 relative overflow-hidden flex flex-col h-full">
+                            <div className="absolute top-0 right-0 p-4 opacity-5 dark:opacity-10 text-blue-500">
+                                <Droplets size={100} />
+                            </div>
+                            <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                                <Droplets size={18} className="text-blue-500"/> Consumo Reale
+                            </h3>
+
+                            <div className="text-center mb-6">
+                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Totale Svapato</p>
+                                <h1 className="text-5xl font-black text-slate-800 dark:text-white mb-1">
+                                    {actualVapedStats.totalMl.toFixed(0)} <span className="text-lg font-bold text-slate-400">ml</span>
+                                </h1>
+                                <p className="text-xs text-slate-400">Inseriti manualmente nel diario</p>
+                            </div>
+                            
+                            <div className="mt-auto">
+                                {!isLiquidFormOpen ? (
+                                    <button 
+                                        onClick={openLiquidForm}
+                                        className="w-full py-3 rounded-2xl bg-blue-600 text-white font-bold shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all text-sm"
+                                    >
+                                        <Plus size={16} /> AGGIUNGI CONSUMO
+                                    </button>
+                                ) : (
+                                    <form onSubmit={handleLiquidSubmit} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-600 text-left animate-in fade-in">
+                                        <h4 className="font-bold text-sm mb-3">Registra Consumo</h4>
+                                        <div className="space-y-3 mb-4">
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-slate-400">Data</label>
+                                                <input type="date" required className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={liquidFormDate} onChange={e => setLiquidFormDate(e.target.value)} />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-slate-400">Quantità (ml)</label>
+                                                <input type="number" step="1" placeholder="Es. 10" className="w-full bg-white dark:bg-slate-800 p-2 rounded-lg border dark:border-slate-600 text-sm font-bold" value={liquidFormMl} onChange={e => setLiquidFormMl(e.target.value)} required />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => setIsLiquidFormOpen(false)} className="flex-1 py-2 rounded-xl text-slate-500 font-bold bg-slate-200 dark:bg-slate-800 text-xs">Annulla</button>
+                                            <button type="submit" className="flex-1 py-2 rounded-xl text-white font-bold bg-blue-600 text-xs">Salva</button>
+                                        </div>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SEZIONE 3: RIEPILOGO ACQUISTI (DAGLI ORDINI) */}
+                    <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-lg border dark:border-slate-700 mb-6 relative overflow-hidden">
+                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                            <Wallet size={18} className="text-emerald-500"/> Riepilogo Acquisti
+                        </h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/50">
+                                <p className="text-emerald-500 text-[10px] font-bold uppercase mb-1">Totale Speso</p>
+                                <p className="text-2xl font-bold text-slate-800 dark:text-white">€{purchaseStats.totalSpent.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/50">
+                                <p className="text-indigo-500 text-[10px] font-bold uppercase mb-1">ML Acquistati</p>
+                                <p className="text-2xl font-bold text-slate-800 dark:text-white">{purchaseStats.totalMlPurchased.toFixed(0)} <span className="text-sm text-slate-400">ml</span></p>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 col-span-2 md:col-span-1">
+                                <p className="text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase mb-1">Costo Medio / 10ml</p>
+                                <p className="text-2xl font-bold text-slate-800 dark:text-white">
+                                    {purchaseStats.totalMlPurchased > 0 
+                                        ? `€${((purchaseStats.totalSpent / purchaseStats.totalMlPurchased) * 10).toFixed(2)}` 
+                                        : 'N/A'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700 text-[10px] text-slate-500">
+                             <Info size={12} className="inline mr-1 mb-0.5" /> Dati calcolati in base agli ordini segnati come "Preso" o "Pagato".
+                        </div>
+                    </div>
+
+                    {/* LISTA ULTIMI INSERIMENTI */}
+                    <div className="mt-8">
+                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                            <History size={18} className="text-slate-400"/> Attività Recente
+                        </h3>
+                        <div className="space-y-2">
+                            {/* Merge and sort history */}
+                            {[
+                                ...coilHistory.map(c => ({ ...c, type: 'coil', date: c.dateReplaced })),
+                                ...liquidLogs.map(l => ({ ...l, type: 'liquid', date: l.date }))
+                            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10).map((entry, idx) => (
+                                <div key={idx} className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-3 rounded-xl shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-lg ${entry.type === 'coil' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30'}`}>
+                                            {entry.type === 'coil' ? <Zap size={16}/> : <Droplets size={16}/>}
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-sm text-slate-800 dark:text-white">
+                                                {entry.type === 'coil' ? 'Cambio Resistenza' : 'Consumo Liquido'}
+                                            </p>
+                                            <p className="text-xs text-slate-400">{new Date(entry.date).toLocaleDateString()}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        {entry.type === 'coil' ? (
+                                            <span className="font-bold text-slate-600 dark:text-slate-300">€{entry.cost.toFixed(2)}</span>
+                                        ) : (
+                                            <span className="font-bold text-blue-500">{entry.ml} ml</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {coilHistory.length === 0 && liquidLogs.length === 0 && (
+                                <p className="text-center text-slate-400 text-sm py-4">Nessuna attività registrata.</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const UserStatistics = ({ orders, currentUser, onBack }) => {
+            const [monthlyBudget, setMonthlyBudget] = useState(0);
+            const [isEditingBudget, setIsEditingBudget] = useState(false);
+
+            // Carica Budget utente
+            useEffect(() => {
+                // FIXED: Utilizza un percorso pubblico
+                const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'user_settings', currentUser);
+                const unsub = onSnapshot(docRef, (s) => {
+                    if (s.exists() && s.data().monthlyBudget) {
+                        setMonthlyBudget(s.data().monthlyBudget);
+                    }
+                });
+                return () => unsub();
+            }, [currentUser]);
+
+            const saveBudget = async () => {
+                // FIXED: Utilizza un percorso pubblico
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'user_settings', currentUser), { 
+                    monthlyBudget: parseFloat(monthlyBudget) || 0 
+                }, { merge: true });
+                setIsEditingBudget(false);
+            };
+
+            const stats = useMemo(() => {
+                let totalSpent = 0;
+                let itemsCount = 0;
+                const typeCounts = {};
+                const monthlySpending = {}; // Raggruppamento per mese
+                
+                orders.forEach(o => {
+                    // Ottieni chiave Mese/Anno (es. 10/2023)
+                    const [d, m, y] = o.date.split('/');
+                    const monthKey = `${m}/${y}`;
+                    
+                    if (!monthlySpending[monthKey]) monthlySpending[monthKey] = 0;
+
+                    (o.items || []).filter(i => i.person === currentUser).forEach(i => {
+                        const price = parseFloat(i.price) || 0;
+                        totalSpent += price;
+                        monthlySpending[monthKey] += price; // Somma al mese
+                        itemsCount++;
+                        const type = i.vapeType || 'Altro';
+                        typeCounts[type] = (typeCounts[type] || 0) + 1;
+                    });
+                });
+
+                // Ordina i mesi dal più recente
+                const sortedMonths = Object.entries(monthlySpending).sort((a, b) => {
+                    const [ma, ya] = a[0].split('/');
+                    const [mb, yb] = b[0].split('/');
+                    return yb - ya || mb - ma;
+                });
+
+                return { totalSpent, itemsCount, typeCounts, sortedMonths };
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Le tue Statistiche</h2>
+                    </div>
+
+                    {/* SEZIONE BUDGET */}
+                    <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border dark:border-slate-700 shadow-sm mb-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                                <PiggyBank className="text-emerald-500" size={20} /> Budget Mensile
+                            </h3>
+                            <button 
+                                onClick={() => isEditingBudget ? saveBudget() : setIsEditingBudget(true)}
+                                className="text-xs bg-slate-100 dark:bg-slate-700 px-3 py-1 rounded-lg font-bold text-slate-500 hover:text-emerald-500"
+                            >
+                                {isEditingBudget ? 'Salva' : 'Modifica'}
+                            </button>
+                        </div>
+
+                        {isEditingBudget ? (
+                            <div className="flex gap-2 items-center mb-4 animate-in fade-in">
+                                <input 
+                                    type="number" 
+                                    autoFocus
+                                    className="w-full bg-slate-50 dark:bg-slate-900 p-2 rounded-lg font-bold border dark:border-slate-600 outline-none"
+                                    value={monthlyBudget}
+                                    onChange={e => setMonthlyBudget(e.target.value)}
+                                    placeholder="0"
+                                />
+                                <span className="font-bold text-slate-400">€</span>
+                            </div>
+                        ) : (
+                             monthlyBudget === 0 ? (
+                                <p className="text-sm text-slate-400 italic mb-4">Nessun budget impostato.</p>
+                             ) : null
+                        )}
+
+                        <div className="space-y-4">
+                            {stats.sortedMonths.map(([monthKey, spent]) => {
+                                const [m, y] = monthKey.split('/');
+                                const dateObj = new Date(y, m - 1);
+                                const monthName = dateObj.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+                                
+                                const percentage = monthlyBudget > 0 ? Math.min((spent / monthlyBudget) * 100, 100) : 0;
+                                let barColor = 'bg-emerald-500';
+                                if (monthlyBudget > 0) {
+                                    if (spent > monthlyBudget) barColor = 'bg-red-500';
+                                    else if (spent > monthlyBudget * 0.8) barColor = 'bg-yellow-500';
+                                }
+
+                                return (
+                                    <div key={monthKey}>
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span className="capitalize font-medium text-slate-700 dark:text-slate-300">{monthName}</span>
+                                            <span className={`font-bold ${spent > monthlyBudget && monthlyBudget > 0 ? 'text-red-500' : 'text-slate-600 dark:text-slate-400'}`}>
+                                                €{spent.toFixed(2)} 
+                                                {monthlyBudget > 0 && <span className="text-slate-400 font-normal"> / €{monthlyBudget}</span>}
+                                            </span>
+                                        </div>
+                                        <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div className={`h-full ${barColor} transition-all duration-1000`} style={{width: monthlyBudget > 0 ? `${percentage}%` : '0%'}}></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {stats.sortedMonths.length === 0 && <p className="text-center text-xs text-slate-400">Nessuna spesa registrata.</p>}
+                        </div>
+                    </div>
+                    {/* FINE SEZIONE BUDGET */}
+
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="bg-blue-500 text-white p-5 rounded-2xl shadow-lg">
+                            <p className="text-blue-100 text-sm mb-1">Spesa Totale</p>
+                            <p className="text-3xl font-bold">€{stats.totalSpent.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-indigo-500 text-white p-5 rounded-2xl shadow-lg">
+                            <p className="text-indigo-100 text-sm mb-1">Articoli Presi</p>
+                            <p className="text-3xl font-bold">{stats.itemsCount}</p>
+                        </div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700">
+                        <h3 className="font-bold mb-4">Preferenze di Svapo</h3>
+                        <div className="space-y-3">
+                            {Object.entries(stats.typeCounts).map(([type, count]) => (
+                                <div key={type}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span>{type}</span>
+                                        <span className="font-bold">{count}</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500" style={{width: `${(count / stats.itemsCount) * 100}%`}}></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ShoppingItem = ({ item, toggleBoughtStatus, updateItemPrice }) => {
+            const [showOther, setShowOther] = useState(false);
+
+            return (
+                <div className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl text-sm border dark:border-slate-600 mb-2 shadow-sm">
+                    <div className="flex justify-between items-center mb-3">
+                         <span className="font-bold text-lg text-slate-800 dark:text-slate-100">{item.person}</span>
+                         <button 
+                            onClick={() => toggleBoughtStatus(item.orderId, item.id)} 
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${item.bought 
+                                ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/30 shadow-md' 
+                                : 'bg-white dark:bg-slate-700 dark:text-white border-slate-300 dark:border-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600'}`}
+                        >
+                            {item.bought ? <CheckSquare size={16}/> : <Square size={16}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}
+                        </button>
+                    </div>
+
+                    {item.link && (
+                        <div className="mb-3">
+                            <a href={item.link} target="_blank" className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg font-bold w-full truncate border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
+                                <ExternalLink size={14} className="flex-shrink-0" /> 
+                                <span className="truncate">{item.link}</span>
+                            </a>
+                        </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 mb-2">
+                        {item.liquidMl && (
+                            <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-3 py-1.5 rounded-lg font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                <Droplets size={14} /> {item.liquidMl}ml
+                            </div>
+                        )}
+                        {item.nicotineMl && (
+                            <div className="bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 px-3 py-1.5 rounded-lg font-bold border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+                                <Zap size={14} /> {item.nicotineMl}
+                            </div>
+                        )}
+                        {item.vapeType && (
+                            <div className="bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-bold border border-slate-300 dark:border-slate-500">
+                                {item.vapeType}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {item.otherItems && (
+                        <div className="mt-1">
+                            <button 
+                                onClick={() => setShowOther(!showOther)} 
+                                className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors w-full md:w-auto justify-center md:justify-start"
+                            >
+                                <Sparkles size={14}/> {showOther ? 'Nascondi Altro' : 'Vedi Altro'} {showOther ? <ChevronDown size={14} className="rotate-180"/> : <ChevronDown size={14}/>}
+                            </button>
+                            {showOther && (
+                                <div className="mt-2 p-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-lg text-sm text-orange-900 dark:text-orange-100 animate-in fade-in slide-in-from-top-2">
+                                    <p className="font-bold mb-1 text-xs uppercase opacity-70">Note aggiuntive:</p>
+                                    {item.otherItems}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="mt-3 pt-3 border-t dark:border-slate-600 flex justify-end items-center gap-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Prezzo (€)</label>
+                        <input 
+                            type="number" 
+                            step="0.01" 
+                            inputMode="decimal"
+                            className="w-24 bg-white dark:bg-slate-900 border dark:border-slate-500 rounded-lg px-2 py-1.5 text-right font-mono font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" 
+                            value={item.price} 
+                            onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} 
+                        />
+                    </div>
+                </div>
+            );
+        };
+
+        const MonthlyReport = ({ orders, currentUser, onBack }) => {
+            const data = useMemo(() => {
+                const groups = {};
+                orders.forEach(order => {
+                    const [day, month, year] = order.date.split('/');
+                    const key = `${month}/${year}`;
+                    if(!groups[key]) groups[key] = { total: 0, items: [] };
+                    
+                    (order.items || []).forEach(item => {
+                        if(item.person === currentUser) {
+                            groups[key].total += (parseFloat(item.price) || 0);
+                            groups[key].items.push({...item, date: order.date, title: order.title});
+                        }
+                    });
+                });
+                return Object.entries(groups).sort((a,b) => {
+                    const [ma, ya] = a[0].split('/');
+                    const [mb, yb] = b[0].split('/');
+                    return yb - ya || mb - ma;
+                });
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Resoconto Mensile</h2>
+                    </div>
+                    <div className="space-y-4">
+                        {data.length === 0 && <p className="text-center text-slate-400 mt-10">Nessuna spesa registrata.</p>}
+                        {data.map(([date, info]) => (
+                            <div key={date} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border dark:border-slate-700 shadow-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className="font-bold text-lg capitalize">{new Date(date.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</h3>
+                                    <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg font-bold">€{info.total.toFixed(2)}</span>
+                                </div>
+                                <div className="text-sm text-slate-500 dark:text-slate-400">{info.items.length} acquisti</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const OrderArchive = ({ orders, currentUser, isManager, onBack, onDelete, onReset, onClickOrder, onSaveTracking }) => {
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Storico Ordini</h2>
+                    </div>
+                    
+                    {orders.length === 0 && <p className="text-center text-slate-400 mt-10">Nessun ordine nello storico.</p>}
+
+                    <div className="space-y-6">
+                        {orders.map(([monthYear, monthOrders]) => (
+                            <div key={monthYear}>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 pl-1 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-2 z-10">
+                                    {new Date(monthYear.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
+                                </h3>
+                                <div className="space-y-3">
+                                    {monthOrders.map(order => (
+                                        <OrderCard 
+                                            key={order.id} 
+                                            order={order} 
+                                            currentUser={currentUser}
+                                            onClick={onClickOrder}
+                                            onDelete={isManager || order.creator === currentUser ? onDelete : undefined}
+                                            onReset={isManager ? onReset : undefined}
+                                            isManager={isManager}
+                                            onSaveTracking={onSaveTracking} // Passaggio funzione tracking
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const OrderCard = ({ order, currentUser, onClick, onDelete, onReset, isManager, onSaveTracking }) => {
+            const myCount = (order.items || []).filter(i => i.person === currentUser).length;
+            const isCreator = order.creator === currentUser;
+
+            return (
+                <div 
+                    onClick={() => onClick(order.id)}
+                    className="bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 rounded-2xl shadow-sm mb-3 flex flex-col gap-3 cursor-pointer active:scale-[0.99] transition-transform hover:shadow-md group relative"
+                >
+                     <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/40 transition-colors">
+                            <ShoppingBag size={22} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight truncate group-hover:text-blue-600 transition-colors">{order.title}</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">I tuoi articoli: <span className="font-bold">{myCount}</span></p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* --- TASTO TRACKING --- */}
+                            {isManager ? (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onSaveTracking(order); }}
+                                    className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors border ${order.tracking ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 border-blue-200 dark:border-blue-800' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-700 hover:text-blue-500'}`}
+                                    title="Modifica Tracking"
+                                >
+                                    <Truck size={18} />
+                                </button>
+                            ) : (
+                                order.tracking && (
+                                    <a 
+                                        href={order.tracking.startsWith('http') ? order.tracking : '#'}
+                                        onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            if(!order.tracking.startsWith('http')) alert("Codice Spedizione: " + order.tracking); 
+                                        }}
+                                        target="_blank"
+                                        className="w-10 h-10 flex items-center justify-center bg-blue-100 dark:bg-blue-900/40 text-blue-600 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors border border-blue-200 dark:border-blue-800 animate-in zoom-in"
+                                        title="Traccia Pacco"
+                                    >
+                                        <Truck size={18} />
+                                    </a>
+                                )
+                            )}
+                            {/* ---------------------- */}
+
+                            {isManager && onReset && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
+                                    className="w-10 h-10 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors border border-orange-100 dark:border-orange-900/30"
+                                    title="Reset / Rifai Ordine"
+                                >
+                                    <RefreshCcw size={18} />
+                                </button>
+                            )}
+
+                            {(isManager || isCreator) && onDelete && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
+                                    className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
+                                    title="Elimina Ordine"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Mostra codice se presente e utente non manager per chiarezza */}
+                    {!isManager && order.tracking && !order.tracking.startsWith('http') && (
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded-lg text-xs text-blue-600 dark:text-blue-300 font-mono text-center">
+                            Codice: {order.tracking}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete, onUpdateStatus, currentPricing, allOrders }) => {
+            const [person, setPerson] = useState(currentUser || (users && users.length > 0 ? users[0] : ''));
+            const [link, setLink] = useState('');
+            const [liquidMl, setLiquidMl] = useState('');
+            const [nicotineMl, setNicotineMl] = useState('');
+            const [vapeType, setVapeType] = useState('Guanciale');
+            const [otherItems, setOtherItems] = useState('');
+            const [extraCost, setExtraCost] = useState(''); 
+            const [customAromaPrice, setCustomAromaPrice] = useState(currentPricing.defaultAromaPrice);
+
+            const estimatedPrice = useMemo(() => {
+                const ml = parseFloat(liquidMl) || 0;
+                const nic = parseFloat(nicotineMl) || 0;
+                const extra = parseFloat(extraCost) || 0;
+                const aromaP = parseFloat(customAromaPrice) || currentPricing.defaultAromaPrice;
+
+                if (ml === 0) return 0; 
+
+                const nicBottles = (ml * nic) / currentPricing.nicotineBottleMg;
+                const costNic = nicBottles * currentPricing.nicotineBottlePrice;
+                const costAroma = aromaP;
+                const volNic = nicBottles * currentPricing.nicotineBottleVol;
+                const volBase = ml - currentPricing.aromaVol - volNic;
+                const costBase = volBase > 0 ? volBase * currentPricing.basePricePerMl : 0;
+
+                return costNic + costAroma + costBase + extra;
+            }, [liquidMl, nicotineMl, extraCost, customAromaPrice, currentPricing]);
+
+            if (!order) return (
+                 <div className="pb-20 animate-in p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                        
+                        {(isManager || (order && order.creator === currentUser)) && (
+                            <button 
+                                onClick={() => onDelete(order.id)} 
+                                className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                title="Elimina intero ordine"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="p-10 text-center text-slate-400">
+                        <p>Ordine non trovato o in caricamento...</p>
+                    </div>
+                </div>
+            );
+            
+            const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
+            const isCreator = order.creator === currentUser;
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
+                
+                onAdd(order.id, { 
+                    person, 
+                    link, 
+                    aroma: '', 
+                    liquidMl, 
+                    nicotineMl, 
+                    vapeType, 
+                    otherItems, 
+                    price: Math.ceil(estimatedPrice), 
+                    userConfirmedPayment: false 
+                });
+                
+                setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems(''); setExtraCost(''); setCustomAromaPrice(currentPricing.defaultAromaPrice);
+            };
+
+            const handleSendOrder = () => {
+                alert("Ordine inviato correttamente!"); 
+                onBack();
+            };
+
+            const itemsByPerson = isManager 
+                ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
+                : { [currentUser]: visibleItems };
+
+            const calculateRecipe = (totalMlStr, nicTargetStr, type) => {
+                const totalMl = parseFloat(totalMlStr) || 0;
+                const targetNic = parseFloat(nicTargetStr) || 0;
+                if(totalMl === 0) return null;
+
+                const nicStrength = 20; // Default basetta
+                // MTL 10% aroma, DL 12%
+                const aromaPct = type === 'Guanciale' ? 10 : 12; 
+                
+                const aromaMl = (totalMl * aromaPct) / 100;
+                const nicMl = (totalMl * targetNic) / nicStrength;
+                const baseMl = totalMl - aromaMl - nicMl;
+                
+                return { baseMl, nicMl, aromaMl, aromaPct };
+            }
+
+            return (
+                <div className="pb-20 animate-in">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                        
+                        {(isManager || isCreator) && (
+                            <button 
+                                onClick={() => onDelete(order.id)} 
+                                className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                title="Elimina intero ordine"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
+                    
+                    {!isManager && (
+                        <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
+                             <div className="flex justify-between items-center mb-3">
+                                 <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2"><Plus size={16}/> Aggiungi Articolo</h3>
+                                 <div className="flex gap-2">
+                                     {estimatedPrice > 0 && (
+                                       <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-lg text-xs font-bold animate-in fade-in">
+                                             ~€{estimatedPrice.toFixed(2)}
+                                       </span>
+                                     )}
+                                 </div>
+                             </div>
+                            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                                <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
+                                    <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                                </div>
+                                <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Link</label>
+                                    <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="space-y-2 flex-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Specifiche</label>
+                                        <div className="flex gap-2"><div className="relative flex-1"><input type="number" inputMode="numeric" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="number" inputMode="decimal" placeholder="Nicotina" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
+                                    </div>
+                                    <div className="space-y-2 w-1/3"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Costo Aroma (€)</label>
+                                        <input type="number" step="0.01" inputMode="decimal" placeholder={currentPricing.defaultAromaPrice.toFixed(2)} className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={customAromaPrice} onChange={e => setCustomAromaPrice(e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="flex bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600 p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t}</button>)}</div>
+                                <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro & Extra</label>
+                                    <div className="flex gap-2">
+                                        <textarea rows="1" placeholder="Es. Cotone..." className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} />
+                                        <input type="number" inputMode="decimal" placeholder="Costo Aggiunte (€)" className="w-1/3 px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={extraCost} onChange={e => setExtraCost(e.target.value)} />
+                                    </div>
+                                </div>
+                                <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="space-y-6">
+                        {!isManager && (visibleItems.length > 0) && (
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white px-1">I tuoi articoli inseriti:</h3>
+                        )}
+
+                        {Object.entries(itemsByPerson).map(([pName, pItems]) => (
+                            <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
+                                {isManager && (
+                                    <div className="flex justify-between items-center mb-3 px-1 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-2 z-10">
+                                        <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{pName}</h3>
+                                        <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{pItems.length} articoli</span>
+                                    </div>
+                                )}
+                                <div className="space-y-2">
+                                    {pItems.slice().reverse().map((item) => {
+                                        const recipe = isManager && item.liquidMl ? calculateRecipe(item.liquidMl, item.nicotineMl, item.vapeType) : null;
+
+                                        return (
+                                            <div key={item.id} className="p-3 md:p-4 rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition hover:shadow-md">
+                                                {isManager ? (
+                                                    <div className="space-y-3">
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="min-w-0">
+                                                                {item.link ? 
+                                                                    <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block hover:underline text-sm">{item.link}</a> : 
+                                                                    <p className="font-bold text-slate-800 dark:text-white truncate text-sm">Oggetto manuale</p>
+                                                                }
+                                                                {item.otherItems && <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><Sparkles size={10} /> {item.otherItems}</p>}
+                                                            </div>
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                                className="text-slate-300 hover:text-red-500 p-1"
+                                                            >
+                                                                <X size={16} />
+                                                            </button>
+                                                        </div>
+
+                                                        {recipe && (
+                                                            <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 border border-slate-100 dark:border-slate-700">
+                                                                <div className="flex justify-between items-center mb-2 border-b dark:border-slate-700/50 pb-1">
+                                                                    <span className="text-xs font-bold uppercase text-slate-400">Target: {item.liquidMl}ml @ {item.nicotineMl}mg ({item.vapeType})</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-[10px] text-purple-500 font-bold uppercase">Nicotina (20mg)</span>
+                                                                        <span className="font-bold dark:text-white">{recipe.nicMl.toFixed(1)} ml</span>
+                                                                        <span className="text-[10px] text-slate-400">~ {(recipe.nicMl / 10).toFixed(1)} boccette</span>
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-[10px] text-blue-500 font-bold uppercase">Base + Aroma</span>
+                                                                        <span className="font-bold dark:text-white">{(recipe.baseMl + recipe.aromaMl).toFixed(1)} ml</span>
+                                                                        <span className="text-[10px] text-slate-400">Di cui aroma ~{recipe.aromaMl.toFixed(1)}ml</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {!recipe && !item.otherItems && <p className="text-xs text-slate-400 italic">Nessuna specifica di liquido.</p>}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="min-w-0 flex-1 pr-3">
+                                                            {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                                            {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><Sparkles size={10} inline /> {item.otherItems}</p>}
+                                                        </div>
+                                                        
+                                                        <div className="flex flex-col items-end gap-2">
+                                                            {!item.paid ? (
+                                                                item.userConfirmedPayment ? (
+                                                                    <span className="text-[10px] font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded-lg">In attesa conferma</span>
+                                                                ) : (
+                                                                    <button 
+                                                                        onClick={() => onUpdateStatus(order.id, item.id, 'userConfirmedPayment', true)}
+                                                                        className="flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-bold px-2 py-1.5 rounded-lg shadow hover:bg-emerald-600"
+                                                                    >
+                                                                        <CheckCircle2 size={12}/> Ho Pagato
+                                                                    </button>
+                                                                )
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">Pagato</span>
+                                                            )}
+
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                                className="text-slate-300 hover:text-red-500 p-1"
+                                                            >
+                                                                <X size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                    )})}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {!isManager && (
+                        <div className="mt-8 pt-6 border-t dark:border-slate-800">
+                            <button 
+                                onClick={handleSendOrder}
+                                className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-transform"
+                            >
+                                <Send size={20} />
+                                CONFERMA E INVIA ORDINE
+                            </button>
+                            <p className="text-center text-xs text-slate-400 mt-2">L'ordine verrà salvato e potrai vederlo nella lista principale.</p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const OrderManager = () => {
             const [users, setUsers] = useState(['Gestore']);
             const [orders, setOrders] = useState([]);
             const [paymentRequests, setPaymentRequests] = useState({});
             const [pricing, setPricing] = useState(DEFAULT_PRICING); 
             const [notices, setNotices] = useState([]); 
-            const [quickLinks, setQuickLinks] = useState([{ name: 'Svapoebasta', url: 'https://www.svapoebasta.com/' }]); // DEFAULT LINK
+            const [quickLinks, setQuickLinks] = useState([{ name: 'Svapoebasta', url: 'https://www.svapoebasta.com/' }]); 
 
-            // --- NUOVI STATI PER GESTIONE LINK ---
+            // --- NUOVI STATI PER GESTIONE TRACKING ---
+            const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+            const [trackingOrderId, setTrackingOrderId] = useState(null);
+            const [trackingInitialValue, setTrackingInitialValue] = useState('');
+            // -----------------------------------------
+
             const [isAddingLink, setIsAddingLink] = useState(false);
             const [newLinkName, setNewLinkName] = useState('');
             const [newLinkUrl, setNewLinkUrl] = useState('');
-            // -------------------------------------
 
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
@@ -1549,7 +2280,7 @@
             };
 
             const { activeOrders, archivedOrdersList } = useMemo(() => {
-                const threshold = isManager ? 7 : 3;
+                const threshold = 7; // Fixed 7 days for everyone
                 const filterVisible = (o) => {
                     if (isManager) return true;
                     return (o.creator === 'Gestore' || !o.creator || o.creator === currentUser);
@@ -1810,6 +2541,24 @@
                     "Elimina"
                 );
             };
+
+            // --- GESTIONE TRACKING ---
+            const openTrackingModal = (order) => {
+                setTrackingOrderId(order.id);
+                setTrackingInitialValue(order.tracking || '');
+                setIsTrackingModalOpen(true);
+            };
+
+            const saveTracking = async (value) => {
+                if (!trackingOrderId) return;
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', trackingOrderId), { 
+                    tracking: value 
+                }, { merge: true });
+                setIsTrackingModalOpen(false);
+                setTrackingOrderId(null);
+                showInfo("Salvato", "Informazioni di tracciamento aggiornate.");
+            };
+            // -------------------------
 
             const resetOrder = (orderId) => {
                 showConfirm(
@@ -2160,6 +2909,14 @@
                     <PricingModal isOpen={isPricingModalOpen} onClose={() => setIsPricingModalOpen(false)} currentPricing={pricing} onSave={savePricing} />
                     <AddToFavoriteModal isOpen={favModalOpen} onClose={() => setFavModalOpen(false)} onConfirm={handleAddToFavorites} item={itemToFav} />
                     
+                    {/* MODALE TRACKING */}
+                    <TrackingModal 
+                        isOpen={isTrackingModalOpen} 
+                        onClose={() => setIsTrackingModalOpen(false)} 
+                        onSave={saveTracking} 
+                        initialValue={trackingInitialValue} 
+                    />
+
                     <div className="max-w-4xl mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col border-x border-slate-100 dark:border-slate-800 relative">
                         
                         {/* HEADER */}
@@ -2192,47 +2949,57 @@
                                         {!isManager && (
                                             <>
                                                 <button onClick={() => { setView('wishlist'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
-                                                    <div className="p-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-lg"><ClipboardList size={18}/></div> Wishlist
+                                                    <div className="p-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-lg"><ClipboardList size={18}/></div> Le Mie Liste
                                                 </button>
                                                 <button onClick={() => { setView('monthly-report'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg"><Calendar size={18}/></div> Resoconto Spese
                                                 </button>
-                                                
+                                                <button onClick={() => { setView('user-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg"><Archive size={18}/></div> Archivio Ordini
+                                                </button>
                                                 <button onClick={() => { setView('activity-hub'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 rounded-lg"><Activity size={18}/></div> Diario Svapo
-                                                </button>
-
-                                                <button onClick={() => { setView('favorites'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
-                                                    <div className="p-2 bg-pink-100 dark:bg-pink-900/30 text-pink-600 rounded-lg"><Heart size={18}/></div> Aromi Preferiti
                                                 </button>
                                                 <button onClick={() => { setView('stats'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-600 rounded-lg"><BarChart3 size={18}/></div> Statistiche
                                                 </button>
-                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
-                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
-                                                </button>
+                                                
                                                 <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
                                             </>
                                         )}
 
                                         {isManager && (
                                             <>
-                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
-                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
-                                                </button>
+                                                {/* 1. Gestione Bacheca */}
                                                 <button onClick={() => { setView('notice-manager'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 rounded-lg"><MessageCircle size={18}/></div> Gestione Bacheca
                                                 </button>
-                                                <button onClick={() => { setView('calculator'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
-                                                    <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 rounded-lg"><FlaskConical size={18}/></div> Calcolatore Mix
-                                                </button>
+                                                
+                                                {/* 2. Magazzino */}
                                                 <button onClick={() => { setView('warehouse'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-lg"><Box size={18}/></div> Magazzino
                                                 </button>
+
+                                                {/* 3. Calcolatore Mix */}
+                                                <button onClick={() => { setView('calculator'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 rounded-lg"><FlaskConical size={18}/></div> Calcolatore Mix
+                                                </button>
+
+                                                {/* 4. Configura Prezzi */}
                                                 <button onClick={() => { setIsPricingModalOpen(true); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/10 text-emerald-600 text-sm font-medium">
                                                     <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-lg"><DollarSign size={18}/></div> Configura Prezzi
                                                 </button>
+
                                                 <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+
+                                                {/* 5. Storico Ordini */}
+                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
+                                                </button>
+                                                
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                                
+                                                {/* 6. Reset App */}
                                                 <button onClick={() => { factoryReset(); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/10 text-red-500 text-sm font-medium">
                                                     <div className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-lg"><AlertTriangle size={18}/></div> Reset App
                                                 </button>
@@ -2527,8 +3294,10 @@
                                     {view === 'wishlist' && !isManager && <Wishlist onBack={() => setView('dashboard')} currentUser={currentUser} activeOrderId={activeOrderId} onAddToOrder={handleReorderSingle} />}
                                     {view === 'favorites' && !isManager && <FavoritesSection onBack={() => setView('dashboard')} currentUser={currentUser} onAddToActiveOrder={handleReorderSingle} />}
                                     {view === 'stats' && !isManager && <UserStatistics orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
+                                    {/* NUOVA VISTA ARCHIVIO UTENTE */}
+                                    {view === 'user-archive' && !isManager && <OrderArchive orders={groupedArchivedOrders} currentUser={currentUser} isManager={false} onBack={() => setView('dashboard')} onClickOrder={setActiveOrderId} />}
                                     
-                                    {/* --- UNIFICATO VIEW DIARIO SVAPO (ex COIL TRACKER) --- */}
+                                    {/* --- AGGIUNTO VIEW COIL TRACKER --- */}
                                     {view === 'activity-hub' && !isManager && <UserActivityHub orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} showConfirm={showConfirm} />}
 
                                     {view === 'payments' && isManager && (
@@ -2577,9 +3346,7 @@
                                         </div>
                                     )}
 
-                                    {view === 'monthly-report' && <MonthlyReport orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
-                                    
-                                    {view === 'manager-archive' && <OrderArchive orders={groupedArchivedOrders} currentUser={currentUser} isManager={isManager} onBack={() => setView('dashboard')} onDelete={deleteOrder} onReset={resetOrder} onClickOrder={setActiveOrderId} />}
+                                    {view === 'manager-archive' && <OrderArchive orders={groupedArchivedOrders} currentUser={currentUser} isManager={isManager} onBack={() => setView('dashboard')} onDelete={deleteOrder} onReset={resetOrder} onClickOrder={setActiveOrderId} onSaveTracking={openTrackingModal} />}
 
                                     {view === 'orders' && !isManager && (
                                         <div className="space-y-6 animate-in">
@@ -2604,6 +3371,7 @@
                                                                             onDelete={deleteOrder}
                                                                             onReset={resetOrder}
                                                                             isManager={isManager}
+                                                                            onSaveTracking={openTrackingModal} // Passaggio funzione tracking
                                                                         />
                                                                     ))}
                                                                 </div>
