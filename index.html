@@ -699,7 +699,7 @@
             );
         };
 
-        const UserActivityHub = ({ orders, currentUser, onBack }) => {
+        const UserActivityHub = ({ orders, currentUser, onBack, showConfirm }) => {
             const [lastChangeDate, setLastChangeDate] = useState(null);
             const [coilHistory, setCoilHistory] = useState([]);
             const [liquidLogs, setLiquidLogs] = useState([]); 
@@ -714,7 +714,11 @@
             const [isLiquidFormOpen, setIsLiquidFormOpen] = useState(false);
             const [liquidFormDate, setLiquidFormDate] = useState('');
             const [liquidFormMl, setLiquidFormMl] = useState('');
-            // --------------------------
+
+            // --- STATI MODIFICA ---
+            const [editingItem, setEditingItem] = useState(null); // L'oggetto originale che si sta modificando
+            const [editDate, setEditDate] = useState('');
+            const [editValue, setEditValue] = useState(''); // Costo o Ml
 
             // Carica dati
             useEffect(() => {
@@ -724,19 +728,18 @@
                         const data = s.data();
                         setLastChangeDate(data.lastCoilChange);
                         setCoilHistory(data.history || []);
-                        setLiquidLogs(data.liquidLogs || []); // Carica storico liquidi indipendente
+                        setLiquidLogs(data.liquidLogs || []);
                     }
                     setIsLoading(false);
                 });
                 return () => unsub();
             }, [currentUser]);
 
-            // STATISTICHE ACQUISTI (SPESA E ML BASATI SUGLI ORDINI)
+            // STATISTICHE ACQUISTI
             const purchaseStats = useMemo(() => {
                 let totalSpent = 0;
                 let totalMlPurchased = 0;
                 orders.forEach(o => {
-                    // Consideriamo solo ordini 'bought' (presi) o 'paid' (pagati)
                     (o.items || []).filter(i => i.person === currentUser && (i.bought || i.paid)).forEach(i => {
                         totalSpent += (parseFloat(i.price) || 0);
                         if (i.liquidMl) {
@@ -747,13 +750,13 @@
                 return { totalSpent, totalMlPurchased };
             }, [orders, currentUser]);
 
-            // STATISTICHE SVAPO REALE (BASATE SOLO SULLO STORICO INSERITO DALL'UTENTE)
+            // STATISTICHE SVAPO REALE
             const actualVapedStats = useMemo(() => {
                 const totalMl = liquidLogs.reduce((acc, curr) => acc + (parseFloat(curr.ml) || 0), 0);
                 return { totalMl };
             }, [liquidLogs]);
 
-            // STATISTICHE COIL ATTUALE (SOLO GIORNI)
+            // STATISTICHE COIL ATTUALE
             const currentCoilDays = useMemo(() => {
                 if (!lastChangeDate) return 0;
                 const start = new Date(lastChangeDate);
@@ -762,29 +765,28 @@
                 return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
             }, [lastChangeDate]);
 
-            // --- APERTURA FORM ---
-            const openResetForm = () => {
-                const today = new Date().toISOString().split('T')[0];
-                setCoilFormDate(today);
-                setCoilFormCost('');
-                setIsCoilFormOpen(true);
-            };
-
+            // --- FUNZIONI UTILITY ---
             const openCoilForm = () => {
                 const today = new Date().toISOString().split('T')[0];
                 setCoilFormDate(today);
                 setCoilFormCost('');
                 setIsCoilFormOpen(true);
-                setIsLiquidFormOpen(false); // Chiude l'altro form se aperto
+                setIsLiquidFormOpen(false);
             };
 
-            // --- SALVATAGGIO DATI ---
+            const openLiquidForm = () => {
+                const today = new Date().toISOString().split('T')[0];
+                setLiquidFormDate(today);
+                setLiquidFormMl('');
+                setIsLiquidFormOpen(true);
+                setIsCoilFormOpen(false);
+            };
+
+            // --- SALVATAGGIO NUOVI DATI ---
             const handleCoilSubmit = async (e) => {
                 e.preventDefault();
-                
                 const newDateIso = new Date(coilFormDate).toISOString();
                 
-                // Calcolo giorni effettivi basato sulla data inserita dall'utente
                 let daysLasted = 0;
                 if (lastChangeDate) {
                     const start = new Date(lastChangeDate);
@@ -793,8 +795,8 @@
                     daysLasted = Math.ceil(diff / (1000 * 60 * 60 * 24));
                 }
 
-                // Crea voce di storico
                 const historyEntry = {
+                    id: Date.now(), // Aggiungo ID per future modifiche più facili
                     dateReplaced: newDateIso,
                     startDate: lastChangeDate || newDateIso,
                     daysLasted: daysLasted > 0 ? daysLasted : currentCoilDays,
@@ -807,15 +809,6 @@
                 }, { merge: true });
 
                 setIsCoilFormOpen(false);
-            };
-
-            // --- GESTIONE AGGIUNTA LIQUIDO ---
-            const openLiquidForm = () => {
-                const today = new Date().toISOString().split('T')[0];
-                setLiquidFormDate(today);
-                setLiquidFormMl('');
-                setIsLiquidFormOpen(true);
-                setIsCoilFormOpen(false); // Chiude l'altro form
             };
 
             const handleLiquidSubmit = async (e) => {
@@ -833,6 +826,84 @@
                 }, { merge: true });
 
                 setIsLiquidFormOpen(false);
+            };
+
+            // --- GESTIONE MODIFICA ED ELIMINAZIONE STORICO ---
+
+            const handleDeleteEntry = (entry) => {
+                showConfirm(
+                    "Elimina Attività",
+                    "Sei sicuro di voler eliminare questa voce dal diario?",
+                    async () => {
+                        if (entry.type === 'coil') {
+                            // Per le coil vecchie che non hanno ID, usiamo il confronto oggetto intero, altrimenti ID
+                            const newHistory = coilHistory.filter(i => entry.id ? i.id !== entry.id : i.dateReplaced !== entry.dateReplaced);
+                            
+                            // Se eliminiamo l'ultima coil, dovremmo resettare la data? Per ora lasciamo la logica semplice.
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                                history: newHistory 
+                            }, { merge: true });
+                        } else {
+                            const newLogs = liquidLogs.filter(i => i.id !== entry.id);
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                                liquidLogs: newLogs 
+                            }, { merge: true });
+                        }
+                    },
+                    true,
+                    "Elimina"
+                );
+            };
+
+            const startEditing = (entry) => {
+                setEditingItem(entry);
+                // Prepara i valori di default per l'input
+                setEditDate(new Date(entry.date).toISOString().split('T')[0]);
+                if (entry.type === 'coil') {
+                    setEditValue(entry.cost || 0);
+                } else {
+                    setEditValue(entry.ml || 0);
+                }
+            };
+
+            const saveEditing = async () => {
+                if (!editingItem) return;
+                const newDateIso = new Date(editDate).toISOString();
+                const newVal = parseFloat(editValue) || 0;
+
+                if (editingItem.type === 'coil') {
+                    const newHistory = coilHistory.map(item => {
+                        // Confronto tramite ID se c'è, o riferimento oggetto/data per retrocompatibilità
+                        const match = editingItem.id ? item.id === editingItem.id : item.dateReplaced === editingItem.dateReplaced;
+                        if (match) {
+                            return { ...item, dateReplaced: newDateIso, cost: newVal };
+                        }
+                        return item;
+                    });
+                    
+                    // Se stiamo modificando l'ultima coil inserita, aggiorniamo anche la "lastCoilChange" principale
+                    // Ordinamento per trovare la più recente
+                    const sortedHistory = [...newHistory].sort((a,b) => new Date(b.dateReplaced) - new Date(a.dateReplaced));
+                    const newLastChange = sortedHistory.length > 0 ? sortedHistory[0].dateReplaced : lastChangeDate;
+
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                        history: newHistory,
+                        lastCoilChange: newLastChange
+                    }, { merge: true });
+
+                } else {
+                    const newLogs = liquidLogs.map(item => {
+                        if (item.id === editingItem.id) {
+                            return { ...item, date: newDateIso, ml: newVal };
+                        }
+                        return item;
+                    });
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'coil_settings', currentUser), { 
+                        liquidLogs: newLogs 
+                    }, { merge: true });
+                }
+
+                setEditingItem(null);
             };
 
             return (
@@ -971,38 +1042,85 @@
                         </div>
                     </div>
 
-                    {/* LISTA ULTIMI INSERIMENTI */}
+                    {/* LISTA ULTIMI INSERIMENTI MODIFICABILI */}
                     <div className="mt-8">
                         <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
                             <History size={18} className="text-slate-400"/> Attività Recente
                         </h3>
                         <div className="space-y-2">
-                            {/* Merge and sort history */}
                             {[
                                 ...coilHistory.map(c => ({ ...c, type: 'coil', date: c.dateReplaced })),
                                 ...liquidLogs.map(l => ({ ...l, type: 'liquid', date: l.date }))
-                            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10).map((entry, idx) => (
-                                <div key={idx} className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-3 rounded-xl shadow-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${entry.type === 'coil' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30'}`}>
-                                            {entry.type === 'coil' ? <Zap size={16}/> : <Droplets size={16}/>}
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-sm text-slate-800 dark:text-white">
-                                                {entry.type === 'coil' ? 'Cambio Resistenza' : 'Consumo Liquido'}
-                                            </p>
-                                            <p className="text-xs text-slate-400">{new Date(entry.date).toLocaleDateString()}</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        {entry.type === 'coil' ? (
-                                            <span className="font-bold text-slate-600 dark:text-slate-300">€{entry.cost.toFixed(2)}</span>
+                            ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 20).map((entry, idx) => {
+                                const isEditing = editingItem && ((entry.id && entry.id === editingItem.id) || (entry.type === 'coil' && entry.dateReplaced === editingItem.dateReplaced));
+
+                                return (
+                                    <div key={idx} className={`p-3 rounded-xl border dark:border-slate-700 shadow-sm transition-all ${isEditing ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200' : 'bg-white dark:bg-slate-800'}`}>
+                                        {isEditing ? (
+                                            /* MODALITÀ MODIFICA */
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex gap-2">
+                                                    <div className="flex-1">
+                                                        <label className="text-[10px] uppercase font-bold text-slate-400">Data</label>
+                                                        <input 
+                                                            type="date" 
+                                                            value={editDate} 
+                                                            onChange={e => setEditDate(e.target.value)} 
+                                                            className="w-full bg-white dark:bg-slate-900 p-2 rounded-lg border dark:border-slate-600 text-sm"
+                                                        />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <label className="text-[10px] uppercase font-bold text-slate-400">{entry.type === 'coil' ? 'Costo €' : 'Quantità ml'}</label>
+                                                        <input 
+                                                            type="number" 
+                                                            step={entry.type === 'coil' ? "0.01" : "1"}
+                                                            value={editValue} 
+                                                            onChange={e => setEditValue(e.target.value)} 
+                                                            className="w-full bg-white dark:bg-slate-900 p-2 rounded-lg border dark:border-slate-600 text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2 justify-end">
+                                                    <button onClick={() => setEditingItem(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 bg-slate-200 dark:bg-slate-700">Annulla</button>
+                                                    <button onClick={saveEditing} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600">Salva</button>
+                                                </div>
+                                            </div>
                                         ) : (
-                                            <span className="font-bold text-blue-500">{entry.ml} ml</span>
+                                            /* MODALITÀ VISUALIZZAZIONE */
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-2 rounded-lg ${entry.type === 'coil' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30'}`}>
+                                                        {entry.type === 'coil' ? <Zap size={16}/> : <Droplets size={16}/>}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-sm text-slate-800 dark:text-white">
+                                                            {entry.type === 'coil' ? 'Cambio Resistenza' : 'Consumo Liquido'}
+                                                        </p>
+                                                        <p className="text-xs text-slate-400">{new Date(entry.date).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-right mr-2">
+                                                        {entry.type === 'coil' ? (
+                                                            <span className="font-bold text-slate-600 dark:text-slate-300">€{entry.cost?.toFixed(2)}</span>
+                                                        ) : (
+                                                            <span className="font-bold text-blue-500">{entry.ml} ml</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => startEditing(entry)} className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-blue-500 transition-colors">
+                                                            <Edit2 size={14} />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteEntry(entry)} className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-red-500 transition-colors">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                             {coilHistory.length === 0 && liquidLogs.length === 0 && (
                                 <p className="text-center text-slate-400 text-sm py-4">Nessuna attività registrata.</p>
                             )}
