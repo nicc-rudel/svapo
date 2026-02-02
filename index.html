@@ -48,7 +48,8 @@
         }
     }
     </script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- FIX: Bloccata versione di Babel alla 7.24.0 per evitare errore esmodules -->
+    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 
     <style>
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -1032,8 +1033,8 @@
                                 <p className="text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase mb-1">Costo Medio / 10ml</p>
                                 <p className="text-2xl font-bold text-slate-800 dark:text-white">
                                     {purchaseStats.totalMlPurchased > 0 
-                                        ? `€${((purchaseStats.totalSpent / purchaseStats.totalMlPurchased) * 10).toFixed(2)}` 
-                                        : 'N/A'}
+                                    ? `€${((purchaseStats.totalSpent / purchaseStats.totalMlPurchased) * 10).toFixed(2)}` 
+                                    : 'N/A'}
                                 </p>
                             </div>
                         </div>
@@ -2295,7 +2296,7 @@
                                                     </div>
                                                 )}
                                             </div>
-                                    )})}
+                                        )})}
                                 </div>
                             </div>
                         ))}
@@ -3404,7 +3405,7 @@
                                                                 <div key={user} className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-2xl flex justify-between items-center shadow-sm">
                                                                     <div>
                                                                         <p className="font-bold text-slate-800 dark:text-slate-200">{user}</p>
-                                                                        <p className="text-xs text-orange-600 dark:text-orange-400">Ha segnato come pagati {data.items.length} articoli</p>
+                                                                        <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">Ha segnato come pagati {data.items.length} articoli</p>
                                                                         <p className="font-bold text-lg text-slate-800 dark:text-white mt-1">€{data.total.toFixed(2)}</p>
                                                                     </div>
                                                                     <button 
