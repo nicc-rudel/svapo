@@ -1,678 +1,472 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, ShoppingCart, User, Link as LinkIcon, DollarSign, Copy, ExternalLink, Calculator, Settings, Beaker, X, Wifi, WifiOff, AlertTriangle, RefreshCw } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-
-// --- FIREBASE CONFIGURATION & INIT ---
-const firebaseConfig = {
-  apiKey: "AIzaSyAnr2VCKKQs1UMDkK8NbqE7HMtz2d13wTk",
-  authDomain: "ordinionline-7bf9f.firebaseapp.com",
-  projectId: "ordinionline-7bf9f",
-  storageBucket: "ordinionline-7bf9f.firebasestorage.app",
-  messagingSenderId: "517463254787",
-  appId: "1:517463254787:web:20a2dbb843f769136deb36"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-// Usiamo un ID fisso per il database del tuo gruppo
-const appId = 'gruppo-svapo-main';
-
-const GroupOrderManager = () => {
-  const [user, setUser] = useState(null);
-  const [items, setItems] = useState([]);
-  const [connectionStatus, setConnectionStatus] = useState('connecting'); // connecting, connected, error
-  const [errorMessage, setErrorMessage] = useState(''); // To display specific firebase errors
-  
-  // Settings for calculation logic
-  const [settings, setSettings] = useState({
-    nicShotPrice: 1.50,
-    nicShotStrength: 20,
-    nicShotVol: 10,
-    basePricePer10ml: 0.80,
-    aromaVol: 10
-  });
-
-  const [newItem, setNewItem] = useState({
-    user: '',
-    productName: '',
-    url: '',
-    basePrice: '',
-    otherPrice: '', // Nuovo campo per il prezzo dell'oggetto opzionale
-    targetVol: 60,           
-    targetNic: 3             
-  });
-
-  const [showSettings, setShowSettings] = useState(false);
-  const [showAlert, setShowAlert] = useState(false);
-
-  // --- AUTHENTICATION ---
-  
-  const initAuth = useCallback(async () => {
-    setConnectionStatus('connecting');
-    setErrorMessage('');
-    try {
-      // Accesso diretto anonimo al tuo progetto Firebase
-      await signInAnonymously(auth);
-    } catch (error) {
-      console.error("Auth error:", error);
-      setConnectionStatus('error');
-      
-      // Gestione errori specifici per aiutare l'utente
-      if (error.code === 'auth/configuration-not-found' || error.code === 'auth/admin-restricted-operation') {
-          setErrorMessage("L'accesso anonimo non è abilitato. Vai su Firebase Console > Authentication > Sign-in method e abilita 'Anonymous'.");
-      } else if (error.code === 'auth/unauthorized-domain') {
-          setErrorMessage("Dominio non autorizzato. Vai su Firebase Console > Authentication > Settings > Authorized domains e aggiungi questo dominio.");
-      } else if (error.code === 'auth/operation-not-allowed') {
-           setErrorMessage("L'accesso anonimo deve essere abilitato nella console Firebase.");
-      } else {
-          setErrorMessage(error.message);
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VapeGroup Cloud</title>
+    <!-- Tailwind CSS per lo stile -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Firebase Imports -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0"
       }
     }
-  }, []);
+    </script>
+    <style>
+        body { background-color: #f8fafc; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-  useEffect(() => {
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) {
-          setConnectionStatus('connected');
-          setErrorMessage('');
-      }
-    });
-    return () => unsubscribe();
-  }, [initAuth]);
-
-  // --- REAL-TIME DATA SYNC ---
-  useEffect(() => {
-    if (!user) return;
-
-    // 1. Listen for Orders (Public Collection)
-    // We use a specific path for this app instance: artifacts/{appId}/public/data/orders
-    const ordersCollection = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-    
-    const unsubscribeOrders = onSnapshot(ordersCollection, (snapshot) => {
-      const loadedItems = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      // Sort manually in memory (newest first)
-      loadedItems.sort((a, b) => b.createdAt - a.createdAt);
-      setItems(loadedItems);
-    }, (error) => {
-      console.error("Orders sync error:", error);
-      if (error.code === 'permission-denied') {
-          setConnectionStatus('error');
-          setErrorMessage("Permesso negato. Controlla le regole di sicurezza di Firestore (o imposta il database in 'Test Mode').");
-      }
-    });
-
-    // 2. Listen for Shared Settings
-    const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'globalConfig');
-    const unsubscribeSettings = onSnapshot(settingsDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setSettings(docSnap.data());
-      } else {
-        // Initialize default settings if they don't exist
-        setDoc(settingsDocRef, settings).catch(e => console.error("Error init settings", e)); 
-      }
-    }, (error) => {
-        console.error("Settings sync error:", error);
-    });
-
-    return () => {
-      unsubscribeOrders();
-      unsubscribeSettings();
-    };
-  }, [user]);
-
-  // --- ACTIONS ---
-
-  // Save Settings to Cloud
-  const saveSettingsToCloud = async (newSettings) => {
-    if (!user) return;
-    try {
-        const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'globalConfig');
-        await setDoc(settingsDocRef, newSettings);
-        setSettings(newSettings); // Optimistic update
-        setShowSettings(false);
-    } catch (e) {
-        console.error("Error saving settings", e);
-        alert("Errore nel salvataggio: " + e.message);
-    }
-  };
-
-  // Add Item to Cloud
-  const handleAddItem = async (e) => {
-    e.preventDefault();
-    if (!newItem.user || !newItem.productName || !newItem.basePrice) return;
-
-    const currentCalc = calculateLiquidComponents(newItem.basePrice, newItem.targetVol, newItem.targetNic);
-    
-    // Calcola il costo extra per l'item opzionale
-    const extraCost = parseFloat(newItem.otherPrice) || 0;
-
-    // Totale = Costo Liquido (aroma+nic+base) + Costo Extra
-    const finalTotal = currentCalc.total + extraCost;
-    
-    const itemPayload = {
-      ...newItem,
-      otherPrice: extraCost, // Salviamo il costo extra separatamente
-      createdAt: Date.now(),
-      price: finalTotal,
-      details: currentCalc.details,
-      createdBy: user.uid // Track who added it
-    };
-
-    try {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), itemPayload);
-        // Reset form
-        setNewItem({ ...newItem, productName: '', url: '', basePrice: '', otherPrice: '' }); 
-    } catch (e) {
-        console.error("Error adding item", e);
-        alert("Errore nell'aggiunta: " + e.message);
-    }
-  };
-
-  // Delete Item from Cloud
-  const handleDeleteItem = async (id) => {
-    try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', id));
-    } catch (e) {
-        console.error("Error deleting item", e);
-    }
-  };
-
-
-  // --- CALCULATION LOGIC (Same as before) ---
-  const calculateLiquidComponents = (aromaPrice, targetVol, targetNic) => {
-    const pAroma = parseFloat(aromaPrice) || 0;
-    const totalNicNeeded = targetVol * targetNic;
-    const shotsNeeded = totalNicNeeded / (settings.nicShotVol * settings.nicShotStrength);
-    const nicCost = shotsNeeded * settings.nicShotPrice;
-    const volumeOccupiedByNic = shotsNeeded * settings.nicShotVol;
-    let baseNeeded = targetVol - volumeOccupiedByNic - settings.aromaVol; 
-    if (baseNeeded < 0) baseNeeded = 0;
-    const baseCost = (baseNeeded / 10) * settings.basePricePer10ml;
-    const total = pAroma + nicCost + baseCost;
-
-    return {
-      total: total,
-      details: {
-        shots: shotsNeeded.toFixed(1),
-        baseMl: baseNeeded.toFixed(0),
-        nicCost: nicCost,
-        baseCost: baseCost
-      }
-    };
-  };
-
-  const currentLiquidCalculation = calculateLiquidComponents(newItem.basePrice, newItem.targetVol, newItem.targetNic);
-  const currentExtraCost = parseFloat(newItem.otherPrice) || 0;
-  const currentTotalEstimated = currentLiquidCalculation.total + currentExtraCost;
-
-  const calculateTotal = () => {
-    return items.reduce((acc, item) => acc + (item.price || 0), 0).toFixed(2);
-  };
-
-  const calculatePerUser = () => {
-    const perUser = {};
-    items.forEach(item => {
-      if (!perUser[item.user]) perUser[item.user] = 0;
-      perUser[item.user] += (item.price || 0);
-    });
-    return perUser;
-  };
-
-  const copySummaryToClipboard = () => {
-    const userTotals = calculatePerUser();
-    let summary = `🛒 *Riepilogo Ordine Svapo*\n\n`;
-    
-    Object.entries(userTotals).forEach(([user, total]) => {
-      summary += `👤 *${user}*: €${total.toFixed(2)}\n`;
-      items.filter(i => i.user === user).forEach(i => {
-         summary += `   - ${i.productName}`;
-         summary += ` (${i.targetVol}ml @ ${i.targetNic}mg)`;
-         if(i.otherPrice > 0) {
-            summary += ` + Altro: €${i.otherPrice}`;
-         }
-         summary += `\n`;
-      });
-      summary += '\n';
-    });
-    
-    summary += `💰 *TOTALE ORDINE:* €${calculateTotal()}`;
-    
-    navigator.clipboard.writeText(summary);
-    setShowAlert(true);
-    setTimeout(() => setShowAlert(false), 3000);
-  };
-
-  const userTotals = calculatePerUser();
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <script type="module">
+        import React, { useState, useEffect, useCallback } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import { Plus, Trash2, ShoppingCart, User, Link as LinkIcon, DollarSign, Copy, ExternalLink, Calculator, Settings, Beaker, X, Wifi, WifiOff, AlertTriangle, RefreshCw } from 'lucide-react';
         
-        {/* Header */}
-        <header className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden transition-all duration-500">
-          <div className="z-10">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <ShoppingCart className="h-8 w-8" /> VapeGroup Cloud
-            </h1>
-            <div className="flex items-center gap-2 mt-1">
-                {connectionStatus === 'connected' ? (
-                    <span className="flex items-center gap-1 text-xs bg-green-500/20 px-2 py-0.5 rounded-full text-green-100 border border-green-500/30">
-                        <Wifi className="h-3 w-3" /> Online & Sincronizzato
-                    </span>
-                ) : connectionStatus === 'error' ? (
-                    <span className="flex items-center gap-1 text-xs bg-red-500/20 px-2 py-0.5 rounded-full text-red-100 border border-red-500/30">
-                        <AlertTriangle className="h-3 w-3" /> Errore Connessione
-                    </span>
-                ) : (
-                    <span className="flex items-center gap-1 text-xs bg-amber-500/20 px-2 py-0.5 rounded-full text-amber-100 border border-amber-500/30">
-                        <WifiOff className="h-3 w-3" /> Connessione in corso...
-                    </span>
-                )}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 z-10">
-            <button 
-              onClick={() => setShowSettings(true)}
-              className="bg-indigo-500/50 hover:bg-indigo-500 p-2 rounded-lg transition border border-indigo-400/30"
-              title="Impostazioni Condivise Costi"
-            >
-              <Settings className="h-6 w-6 text-white" />
-            </button>
-            <div className="bg-indigo-700/50 px-4 py-2 rounded-lg backdrop-blur-sm border border-indigo-400/30 min-w-[120px] text-center">
-              <span className="text-sm font-medium uppercase tracking-wider text-indigo-200">Totale</span>
-              <div className="text-3xl font-bold">€{calculateTotal()}</div>
-            </div>
-          </div>
-          <div className="absolute -right-10 -bottom-20 w-64 h-64 bg-indigo-500 rounded-full opacity-20 blur-3xl"></div>
-        </header>
+        // Import moduli Firebase da CDN
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
-        {/* ERROR BANNER */}
-        {connectionStatus === 'error' && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-start">
-                        <div className="flex-shrink-0">
-                            <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
-                        </div>
-                        <div className="ml-3">
-                            <h3 className="text-sm font-medium text-red-800">Problema di Configurazione Firebase</h3>
-                            <div className="mt-2 text-sm text-red-700">
-                                <p>{errorMessage || "Controlla la console per i dettagli dell'errore."}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <button 
-                        onClick={initAuth}
-                        className="bg-white text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-50 transition flex items-center gap-2 shadow-sm"
-                    >
-                        <RefreshCw className="h-4 w-4" /> Riprova Connessione
-                    </button>
-                </div>
-            </div>
-        )}
+        // --- CONFIGURAZIONE FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnr2VCKKQs1UMDkK8NbqE7HMtz2d13wTk",
+            authDomain: "ordinionline-7bf9f.firebaseapp.com",
+            projectId: "ordinionline-7bf9f",
+            storageBucket: "ordinionline-7bf9f.firebasestorage.app",
+            messagingSenderId: "517463254787",
+            appId: "1:517463254787:web:20a2dbb843f769136deb36"
+        };
 
-        {/* Settings Modal */}
-        {showSettings && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <Settings className="h-5 w-5 text-indigo-600" /> Configurazione Globale
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">Queste modifiche appariranno a tutti gli utenti.</p>
-                </div>
-                <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600">
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Prezzo Basetta Nicotina (€)</label>
-                  <input type="number" step="0.01" value={settings.nicShotPrice} 
-                    onChange={e => setSettings({...settings, nicShotPrice: parseFloat(e.target.value)})}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Vol. Basetta (ml)</label>
-                    <input type="number" value={settings.nicShotVol} 
-                      onChange={e => setSettings({...settings, nicShotVol: parseFloat(e.target.value)})}
-                      className="w-full p-2 border border-slate-300 rounded-lg outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Gradazione (mg/ml)</label>
-                    <input type="number" value={settings.nicShotStrength} 
-                      onChange={e => setSettings({...settings, nicShotStrength: parseFloat(e.target.value)})}
-                      className="w-full p-2 border border-slate-300 rounded-lg outline-none" />
-                  </div>
-                </div>
+        // Inizializzazione App
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'gruppo-svapo-main';
 
-                <hr className="my-2"/>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Costo Base Neutra (€ per 10ml)</label>
-                  <input type="number" step="0.01" value={settings.basePricePer10ml} 
-                    onChange={e => setSettings({...settings, basePricePer10ml: parseFloat(e.target.value)})}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
-                </div>
-                
-                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Volume stimato Aroma (ml)</label>
-                  <input type="number" step="1" value={settings.aromaVol} 
-                    onChange={e => setSettings({...settings, aromaVol: parseFloat(e.target.value)})}
-                    className="w-full p-2 border border-slate-300 rounded-lg outline-none" />
-                </div>
-
-                <button onClick={() => saveSettingsToCloud(settings)} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium mt-4 hover:bg-indigo-700 shadow-md transition-all active:scale-95">
-                  Salva Modifiche per Tutti
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Left Column: Form & List */}
-          <div className="lg:col-span-2 space-y-6">
+        const GroupOrderManager = () => {
+            const [user, setUser] = useState(null);
+            const [items, setItems] = useState([]);
+            const [connectionStatus, setConnectionStatus] = useState('connecting'); 
+            const [errorMessage, setErrorMessage] = useState('');
             
-            {/* Input Form */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2 text-slate-700">
-                  <Plus className="h-5 w-5 text-indigo-500" /> Aggiungi Liquido
-                </h2>
-              </div>
+            // Impostazioni predefinite costi (modificabili dall'icona ingranaggio)
+            const [settings, setSettings] = useState({
+                nicShotPrice: 1.50,
+                nicShotStrength: 20,
+                nicShotVol: 10,
+                basePricePer10ml: 0.80,
+                aromaVol: 10
+            });
 
-              <form onSubmit={handleAddItem} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* User */}
-                    <div className="relative">
-                        <User className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder="Nome"
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                            value={newItem.user}
-                            onChange={(e) => setNewItem({...newItem, user: e.target.value})}
-                            required
-                        />
-                    </div>
+            // Stato del nuovo elemento da aggiungere
+            const [newItem, setNewItem] = useState({
+                user: '',
+                productName: '',
+                url: '',
+                basePrice: '',
+                otherPrice: '',
+                targetVol: 60,           
+                targetNic: 3             
+            });
+
+            const [showSettings, setShowSettings] = useState(false);
+            const [showAlert, setShowAlert] = useState(false);
+
+            // --- AUTENTICAZIONE (Anonima) ---
+            const initAuth = useCallback(async () => {
+                setConnectionStatus('connecting');
+                setErrorMessage('');
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Auth error:", error);
+                    setConnectionStatus('error');
                     
-                    {/* Price Input */}
-                    <div className="relative">
-                        <DollarSign className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                        <input
-                            type="number"
-                            step="0.01"
-                            placeholder="Prezzo Aroma (€)"
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                            value={newItem.basePrice}
-                            onChange={(e) => setNewItem({...newItem, basePrice: e.target.value})}
-                            required
-                        />
-                    </div>
-                </div>
+                    if (error.code === 'auth/configuration-not-found' || error.code === 'auth/admin-restricted-operation') {
+                        setErrorMessage("L'accesso anonimo non è abilitato su Firebase.");
+                    } else if (error.code === 'auth/unauthorized-domain') {
+                        setErrorMessage("Dominio non autorizzato. Se usi questo file in locale è normale, altrimenti aggiungi il dominio su Firebase.");
+                    } else {
+                        setErrorMessage(error.message);
+                    }
+                }
+            }, []);
 
-                <div className="relative">
-                  <ShoppingBagIcon className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Link Aroma"
-                    className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={newItem.productName}
-                    onChange={(e) => setNewItem({...newItem, productName: e.target.value})}
-                    required
-                  />
-                </div>
+            useEffect(() => {
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    if (u) {
+                        setConnectionStatus('connected');
+                        setErrorMessage('');
+                    }
+                });
+                return () => unsubscribe();
+            }, [initAuth]);
 
-                {/* LIQUID CALCULATOR SECTION */}
-                <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">Configurazione Liquido</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-slate-600 mb-1">Formato Finale (ml)</label>
-                            <select 
-                                className="w-full p-2 rounded border border-indigo-200 bg-white text-sm"
-                                value={newItem.targetVol}
-                                onChange={(e) => setNewItem({...newItem, targetVol: parseInt(e.target.value)})}
-                            >
-                                <option value="20">20ml</option>
-                                <option value="30">30ml</option>
-                                <option value="60">60ml</option>
-                                <option value="100">100ml</option>
-                                <option value="120">120ml</option>
-                                <option value="250">250ml</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-slate-600 mb-1">Nicotina (mg/ml)</label>
-                            <select 
-                                className="w-full p-2 rounded border border-indigo-200 bg-white text-sm"
-                                value={newItem.targetNic}
-                                onChange={(e) => setNewItem({...newItem, targetNic: parseFloat(e.target.value)})}
-                            >
-                                <option value="0">0 mg</option>
-                                <option value="3">3 mg</option>
-                                <option value="4">4 mg</option>
-                                <option value="5">5 mg</option>
-                                <option value="6">6 mg</option>
-                                <option value="7">7 mg</option>
-                                <option value="8">8 mg</option>
-                                <option value="9">9 mg</option>
-                                <option value="10">10 mg</option>
-                            </select>
-                        </div>
-                    </div>
+            // --- SINCRONIZZAZIONE DATI (Real-time) ---
+            useEffect(() => {
+                if (!user) return;
+
+                const handleSyncError = (error, source) => {
+                    console.error(`${source} sync error:`, error);
+                    setConnectionStatus('error');
                     
-                    {/* Live Calculation Preview */}
-                    <div className="mt-3 pt-3 border-t border-indigo-200/50 flex flex-col sm:flex-row justify-between items-end sm:items-center text-sm">
-                        <div className="text-slate-500 text-xs">
-                            + {currentLiquidCalculation.details?.shots} basette (€{currentLiquidCalculation.details?.nicCost.toFixed(2)})<br/>
-                            + {currentLiquidCalculation.details?.baseMl}ml base (€{currentLiquidCalculation.details?.baseCost.toFixed(2)})
-                            {currentExtraCost > 0 && (
-                                <span className="text-indigo-600 font-medium block mt-1">+ Altro: €{currentExtraCost.toFixed(2)}</span>
-                            )}
-                        </div>
-                        <div className="text-right">
-                            <span className="text-xs text-slate-400 block">Totale Stimato</span>
-                            <span className="text-lg font-bold text-indigo-600">€{currentTotalEstimated.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </div>
+                    if (error.message && (error.message.includes("Cloud Firestore API") || error.message.includes("disabled"))) {
+                        setErrorMessage("⚠️ IL DATABASE NON ESISTE. Vai su Firebase Console -> Build -> Firestore Database e clicca 'Crea database' (scegli Modalità Test).");
+                    } else if (error.code === 'permission-denied') {
+                         setErrorMessage("⛔ PERMESSO NEGATO. Il database esiste ma le regole bloccano l'accesso. Imposta le regole in 'Modalità Test'.");
+                    } else {
+                        setErrorMessage(`Errore ${source}: ` + error.message);
+                    }
+                };
 
-                <div className="flex flex-col md:flex-row gap-2">
-                  <div className="relative flex-grow">
-                    <LinkIcon className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                    <input
-                      type="url"
-                      placeholder="Link Altro (opzionale)"
-                      className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                      value={newItem.url}
-                      onChange={(e) => setNewItem({...newItem, url: e.target.value})}
-                    />
-                  </div>
-                  <div className="relative w-full md:w-32">
-                    <DollarSign className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                    <input
-                        type="number"
-                        step="0.01"
-                        placeholder="Costo €"
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                        value={newItem.otherPrice}
-                        onChange={(e) => setNewItem({...newItem, otherPrice: e.target.value})}
-                    />
-                  </div>
-                </div>
-                <button 
-                type="submit"
-                disabled={connectionStatus !== 'connected'}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition shadow-md flex items-center justify-center gap-2 mt-2"
-                >
-                <Plus className="h-5 w-5" /> Aggiungi alla Lista
-                </button>
-              </form>
-            </div>
+                // Ascolta gli ordini
+                const ordersCollection = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+                const unsubscribeOrders = onSnapshot(ordersCollection, (snapshot) => {
+                    const loadedItems = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    loadedItems.sort((a, b) => b.createdAt - a.createdAt);
+                    setItems(loadedItems);
+                    // Se scarichiamo dati con successo, siamo connessi
+                    if(connectionStatus !== 'connected') setConnectionStatus('connected');
+                }, (error) => handleSyncError(error, "Ordini"));
 
-            {/* Items List */}
-            <div className="space-y-3">
-              <h2 className="text-lg font-semibold text-slate-700 ml-1">Lista Acquisti Condivisa ({items.length})</h2>
-              {items.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-500">
-                  <ShoppingCart className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                  <p>La lista è vuota. Iniziate ad aggiungere i liquidi!</p>
-                </div>
-              ) : (
-                items.map((item) => (
-                  <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group hover:border-indigo-300 transition">
-                    <div className="flex items-start gap-4 flex-1 min-w-0">
-                      <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 mt-1">
-                        {item.user.charAt(0).toUpperCase()}
-                      </div>
-                      
-                      <div className="min-w-0 flex-1 space-y-1">
-                        {/* Header: User & Specs */}
-                        <div className="flex items-center gap-2">
-                           <span className="font-bold text-slate-700 text-sm">{item.user}</span>
-                           <span className="bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
-                              <Beaker className="h-3 w-3"/> {item.targetVol}ml @ {item.targetNic}mg
-                           </span>
-                        </div>
+                // Ascolta le impostazioni globali
+                const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'globalConfig');
+                const unsubscribeSettings = onSnapshot(settingsDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setSettings(docSnap.data());
+                    } else {
+                        // Crea impostazioni di default se non esistono
+                        setDoc(settingsDocRef, settings).catch(e => console.error("Error init settings", e)); 
+                    }
+                }, (error) => handleSyncError(error, "Impostazioni"));
 
-                        {/* Category: Aroma */}
-                        <div className="text-sm">
-                            <span className="text-indigo-400 text-[10px] uppercase tracking-wider font-bold block sm:inline sm:mr-1">Aroma:</span>
-                            {(item.productName && (item.productName.startsWith('http://') || item.productName.startsWith('https://'))) ? (
-                                <a 
-                                    href={item.productName} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="text-indigo-600 hover:text-indigo-800 hover:underline font-medium break-all"
-                                >
-                                    {item.productName} <ExternalLink className="inline h-3 w-3 opacity-50 mb-0.5" />
-                                </a>
-                            ) : (
-                                <span className="font-medium text-slate-800 break-all">{item.productName}</span>
-                            )}
-                        </div>
+                return () => {
+                    unsubscribeOrders();
+                    unsubscribeSettings();
+                };
+            }, [user]);
 
-                        {/* Category: Extra / Altro */}
-                        {item.url && (
-                            <div className="text-sm mt-1">
-                                <span className="text-slate-400 text-[10px] uppercase tracking-wider font-bold block sm:inline sm:mr-1">Extra:</span>
-                                <span className="flex flex-wrap items-center gap-2">
-                                    {(item.url.startsWith('http://') || item.url.startsWith('https://')) ? (
-                                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline break-all">
-                                            {item.url} <ExternalLink className="inline h-3 w-3" />
-                                        </a>
-                                    ) : (
-                                        <span className="text-slate-500 break-all">{item.url}</span>
-                                    )}
-                                    {item.otherPrice > 0 && (
-                                        <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                                            +€{parseFloat(item.otherPrice).toFixed(2)}
-                                        </span>
-                                    )}
-                                </span>
-                            </div>
-                        )}
-                      </div>
-                    </div>
+            // --- LOGICA ---
+            const saveSettingsToCloud = async (newSettings) => {
+                if (!user) return;
+                try {
+                    const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'globalConfig');
+                    await setDoc(settingsDocRef, newSettings);
+                    setSettings(newSettings);
+                    setShowSettings(false);
+                } catch (e) {
+                    alert("Errore nel salvataggio: " + e.message);
+                }
+            };
+
+            const calculateLiquidComponents = (aromaPrice, targetVol, targetNic) => {
+                const pAroma = parseFloat(aromaPrice) || 0;
+                const totalNicNeeded = targetVol * targetNic;
+                const shotsNeeded = totalNicNeeded / (settings.nicShotVol * settings.nicShotStrength);
+                const nicCost = shotsNeeded * settings.nicShotPrice;
+                const volumeOccupiedByNic = shotsNeeded * settings.nicShotVol;
+                let baseNeeded = targetVol - volumeOccupiedByNic - settings.aromaVol; 
+                if (baseNeeded < 0) baseNeeded = 0;
+                const baseCost = (baseNeeded / 10) * settings.basePricePer10ml;
+                const total = pAroma + nicCost + baseCost;
+
+                return {
+                    total: total,
+                    details: {
+                        shots: shotsNeeded.toFixed(1),
+                        baseMl: baseNeeded.toFixed(0),
+                        nicCost: nicCost,
+                        baseCost: baseCost
+                    }
+                };
+            };
+
+            const handleAddItem = async (e) => {
+                e.preventDefault();
+                if (!newItem.user || !newItem.productName || !newItem.basePrice) return;
+
+                const currentCalc = calculateLiquidComponents(newItem.basePrice, newItem.targetVol, newItem.targetNic);
+                const extraCost = parseFloat(newItem.otherPrice) || 0;
+                const finalTotal = currentCalc.total + extraCost;
+                
+                const itemPayload = {
+                    ...newItem,
+                    otherPrice: extraCost,
+                    createdAt: Date.now(),
+                    price: finalTotal,
+                    details: currentCalc.details,
+                    createdBy: user.uid
+                };
+
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), itemPayload);
+                    setNewItem({ ...newItem, productName: '', url: '', basePrice: '', otherPrice: '' }); 
+                } catch (e) {
+                    alert("Errore nell'aggiunta: " + e.message);
+                }
+            };
+
+            const handleDeleteItem = async (id) => {
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', id));
+                } catch (e) {
+                    console.error("Error deleting item", e);
+                }
+            };
+
+            const calculateTotal = () => items.reduce((acc, item) => acc + (item.price || 0), 0).toFixed(2);
+            
+            const calculatePerUser = () => {
+                const perUser = {};
+                items.forEach(item => {
+                    if (!perUser[item.user]) perUser[item.user] = 0;
+                    perUser[item.user] += (item.price || 0);
+                });
+                return perUser;
+            };
+
+            const copySummaryToClipboard = () => {
+                const userTotals = calculatePerUser();
+                let summary = `🛒 *Riepilogo Ordine Svapo*\n\n`;
+                Object.entries(userTotals).forEach(([user, total]) => {
+                    summary += `👤 *${user}*: €${total.toFixed(2)}\n`;
+                    items.filter(i => i.user === user).forEach(i => {
+                        summary += `   - ${i.productName}`;
+                        summary += ` (${i.targetVol}ml @ ${i.targetNic}mg)`;
+                        if(i.otherPrice > 0) summary += ` + Altro: €${i.otherPrice}`;
+                        summary += `\n`;
+                    });
+                    summary += '\n';
+                });
+                summary += `💰 *TOTALE ORDINE:* €${calculateTotal()}`;
+                navigator.clipboard.writeText(summary);
+                setShowAlert(true);
+                setTimeout(() => setShowAlert(false), 3000);
+            };
+
+            const currentLiquidCalculation = calculateLiquidComponents(newItem.basePrice, newItem.targetVol, newItem.targetNic);
+            const currentExtraCost = parseFloat(newItem.otherPrice) || 0;
+            const currentTotalEstimated = currentLiquidCalculation.total + currentExtraCost;
+            const userTotals = calculatePerUser();
+
+            // --- RENDER INTERFACCIA ---
+            return React.createElement("div", { className: "min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans" },
+                React.createElement("div", { className: "max-w-4xl mx-auto space-y-6" },
+                    // HEADER
+                    React.createElement("header", { className: "bg-indigo-600 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden transition-all duration-500" },
+                        React.createElement("div", { className: "z-10" },
+                            React.createElement("h1", { className: "text-2xl font-bold flex items-center gap-2" },
+                                React.createElement(ShoppingCart, { className: "h-8 w-8" }), " VapeGroup Cloud"
+                            ),
+                            React.createElement("div", { className: "flex items-center gap-2 mt-1" },
+                                connectionStatus === 'connected' ? 
+                                    React.createElement("span", { className: "flex items-center gap-1 text-xs bg-green-500/20 px-2 py-0.5 rounded-full text-green-100 border border-green-500/30" }, React.createElement(Wifi, { className: "h-3 w-3" }), " Online & Sincronizzato") :
+                                connectionStatus === 'error' ?
+                                    React.createElement("span", { className: "flex items-center gap-1 text-xs bg-red-500/20 px-2 py-0.5 rounded-full text-red-100 border border-red-500/30" }, React.createElement(AlertTriangle, { className: "h-3 w-3" }), " Errore Connessione") :
+                                    React.createElement("span", { className: "flex items-center gap-1 text-xs bg-amber-500/20 px-2 py-0.5 rounded-full text-amber-100 border border-amber-500/30" }, React.createElement(WifiOff, { className: "h-3 w-3" }), " Connessione in corso...")
+                            )
+                        ),
+                        React.createElement("div", { className: "flex items-center gap-4 z-10" },
+                            React.createElement("button", { onClick: () => setShowSettings(true), className: "bg-indigo-500/50 hover:bg-indigo-500 p-2 rounded-lg transition border border-indigo-400/30", title: "Impostazioni" }, React.createElement(Settings, { className: "h-6 w-6 text-white" })),
+                            React.createElement("div", { className: "bg-indigo-700/50 px-4 py-2 rounded-lg backdrop-blur-sm border border-indigo-400/30 min-w-[120px] text-center" },
+                                React.createElement("span", { className: "text-sm font-medium uppercase tracking-wider text-indigo-200" }, "Totale"),
+                                React.createElement("div", { className: "text-3xl font-bold" }, `€${calculateTotal()}`)
+                            )
+                        ),
+                        React.createElement("div", { className: "absolute -right-10 -bottom-20 w-64 h-64 bg-indigo-500 rounded-full opacity-20 blur-3xl" })
+                    ),
                     
-                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                      <div className="text-right">
-                          <span className="font-bold text-slate-700 block">€{(item.price || 0).toFixed(2)}</span>
-                          {item.details && (
-                              <span className="text-xs text-slate-400 block">
-                                  (Aroma €{((item.price || 0) - (item.details?.nicCost || 0) - (item.details?.baseCost || 0) - (item.otherPrice || 0)).toFixed(2)})
-                                  {item.otherPrice > 0 ? ` + Altro €${item.otherPrice}` : ''}
-                              </span>
-                          )}
-                      </div>
-                      <button 
-                        onClick={() => handleDeleteItem(item.id)}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-                        title="Rimuovi"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+                    // BANNER ERRORE
+                    connectionStatus === 'error' && React.createElement("div", { className: "bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm" },
+                        React.createElement("div", { className: "flex flex-col md:flex-row md:items-center justify-between gap-4" },
+                            React.createElement("div", { className: "flex items-start" },
+                                React.createElement(AlertTriangle, { className: "h-5 w-5 text-red-500 flex-shrink-0" }),
+                                React.createElement("div", { className: "ml-3" },
+                                    React.createElement("h3", { className: "text-sm font-medium text-red-800" }, "Problema di Configurazione Firebase"),
+                                    React.createElement("div", { className: "mt-2 text-sm text-red-700" }, errorMessage || "Controlla la console per i dettagli.")
+                                )
+                            ),
+                            React.createElement("button", { onClick: initAuth, className: "bg-white text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-50 transition flex items-center gap-2 shadow-sm" }, React.createElement(RefreshCw, { className: "h-4 w-4" }), " Riprova")
+                        )
+                    ),
 
-          {/* Right Column: Summary */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sticky top-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-700">
-                <Calculator className="h-5 w-5 text-indigo-500" /> Divisione Costi
-              </h2>
-              
-              {Object.keys(userTotals).length === 0 ? (
-                <p className="text-slate-400 text-sm italic">Aggiungi articoli per vedere la divisione dei costi.</p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    {Object.entries(userTotals).map(([user, total]) => (
-                      <div key={user} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                        <span className="font-medium text-slate-700 flex items-center gap-2">
-                           <User className="h-4 w-4 text-slate-400" /> {user}
-                        </span>
-                        <span className="font-bold text-indigo-600">€{total.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
+                    // CONTENUTO PRINCIPALE
+                    React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6" },
+                        // COLONNA SINISTRA (INPUT)
+                        React.createElement("div", { className: "lg:col-span-2 space-y-6" },
+                            // FORM
+                            React.createElement("div", { className: "bg-white rounded-xl shadow-sm border border-slate-200 p-6" },
+                                React.createElement("h2", { className: "text-lg font-semibold flex items-center gap-2 text-slate-700 mb-4" }, React.createElement(Plus, { className: "h-5 w-5 text-indigo-500" }), " Aggiungi Liquido"),
+                                React.createElement("form", { onSubmit: handleAddItem, className: "space-y-4" },
+                                    React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+                                        React.createElement("div", { className: "relative" },
+                                            React.createElement(User, { className: "absolute left-3 top-3 h-5 w-5 text-slate-400" }),
+                                            React.createElement("input", { type: "text", placeholder: "Nome", className: "w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none", value: newItem.user, onChange: e => setNewItem({...newItem, user: e.target.value}), required: true })
+                                        ),
+                                        React.createElement("div", { className: "relative" },
+                                            React.createElement(DollarSign, { className: "absolute left-3 top-3 h-5 w-5 text-slate-400" }),
+                                            React.createElement("input", { type: "number", step: "0.01", placeholder: "Prezzo Aroma (€)", className: "w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none", value: newItem.basePrice, onChange: e => setNewItem({...newItem, basePrice: e.target.value}), required: true })
+                                        )
+                                    ),
+                                    React.createElement("div", { className: "relative" },
+                                        React.createElement(LinkIcon, { className: "absolute left-3 top-3 h-5 w-5 text-slate-400" }),
+                                        React.createElement("input", { type: "text", placeholder: "Link Aroma", className: "w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none", value: newItem.productName, onChange: e => setNewItem({...newItem, productName: e.target.value}), required: true })
+                                    ),
+                                    // Liquid Config
+                                    React.createElement("div", { className: "bg-indigo-50 p-4 rounded-lg border border-indigo-100" },
+                                        React.createElement("h4", { className: "text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3" }, "Configurazione Liquido"),
+                                        React.createElement("div", { className: "grid grid-cols-2 gap-4" },
+                                            React.createElement("div", null, 
+                                                React.createElement("label", { className: "block text-xs font-medium text-slate-600 mb-1" }, "Formato (ml)"),
+                                                React.createElement("select", { className: "w-full p-2 rounded border border-indigo-200 bg-white text-sm", value: newItem.targetVol, onChange: e => setNewItem({...newItem, targetVol: parseInt(e.target.value)}) },
+                                                    [20, 30, 60, 100, 120, 250].map(v => React.createElement("option", { key: v, value: v }, `${v}ml`))
+                                                )
+                                            ),
+                                            React.createElement("div", null, 
+                                                React.createElement("label", { className: "block text-xs font-medium text-slate-600 mb-1" }, "Nicotina (mg)"),
+                                                React.createElement("select", { className: "w-full p-2 rounded border border-indigo-200 bg-white text-sm", value: newItem.targetNic, onChange: e => setNewItem({...newItem, targetNic: parseFloat(e.target.value)}) },
+                                                    [0, 1.5, 3, 4, 6, 8, 9, 12, 14].map(v => React.createElement("option", { key: v, value: v }, `${v} mg`))
+                                                )
+                                            )
+                                        ),
+                                        React.createElement("div", { className: "mt-3 pt-3 border-t border-indigo-200/50 flex justify-between items-center text-sm" },
+                                            React.createElement("div", { className: "text-slate-500 text-xs" },
+                                                `+ ${currentLiquidCalculation.details?.shots} basette (€${currentLiquidCalculation.details?.nicCost.toFixed(2)})`, React.createElement("br"),
+                                                `+ ${currentLiquidCalculation.details?.baseMl}ml base (€${currentLiquidCalculation.details?.baseCost.toFixed(2)})`,
+                                                currentExtraCost > 0 && React.createElement("span", { className: "text-indigo-600 font-medium block mt-1" }, `+ Altro: €${currentExtraCost.toFixed(2)}`)
+                                            ),
+                                            React.createElement("div", { className: "text-right" },
+                                                React.createElement("span", { className: "text-xs text-slate-400 block" }, "Totale Stimato"),
+                                                React.createElement("span", { className: "text-lg font-bold text-indigo-600" }, `€${currentTotalEstimated.toFixed(2)}`)
+                                            )
+                                        )
+                                    ),
+                                    React.createElement("div", { className: "flex flex-col md:flex-row gap-2" },
+                                        React.createElement("div", { className: "relative flex-grow" },
+                                            React.createElement(LinkIcon, { className: "absolute left-3 top-3 h-5 w-5 text-slate-400" }),
+                                            React.createElement("input", { type: "url", placeholder: "Link Altro (opzionale)", className: "w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none", value: newItem.url, onChange: e => setNewItem({...newItem, url: e.target.value}) })
+                                        ),
+                                        React.createElement("div", { className: "relative w-full md:w-32" },
+                                            React.createElement(DollarSign, { className: "absolute left-3 top-3 h-5 w-5 text-slate-400" }),
+                                            React.createElement("input", { type: "number", step: "0.01", placeholder: "Costo €", className: "w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none", value: newItem.otherPrice, onChange: e => setNewItem({...newItem, otherPrice: e.target.value}) })
+                                        )
+                                    ),
+                                    React.createElement("button", { type: "submit", disabled: connectionStatus !== 'connected', className: "w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition shadow-md flex items-center justify-center gap-2 mt-2" },
+                                        React.createElement(Plus, { className: "h-5 w-5" }), " Aggiungi alla Lista"
+                                    )
+                                )
+                            ),
+                            // LISTA
+                            React.createElement("div", { className: "space-y-3" },
+                                React.createElement("h2", { className: "text-lg font-semibold text-slate-700 ml-1" }, `Lista Acquisti Condivisa (${items.length})`),
+                                items.length === 0 ? 
+                                    React.createElement("div", { className: "text-center py-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-500" },
+                                        React.createElement(ShoppingCart, { className: "h-12 w-12 mx-auto mb-3 opacity-20" }),
+                                        React.createElement("p", null, "La lista è vuota.")
+                                    ) :
+                                    items.map(item => 
+                                        React.createElement("div", { key: item.id, className: "bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-start justify-between gap-4 fade-in" },
+                                            React.createElement("div", { className: "flex items-start gap-4 flex-1 min-w-0" },
+                                                React.createElement("div", { className: "h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 mt-1" }, item.user.charAt(0).toUpperCase()),
+                                                React.createElement("div", { className: "min-w-0 flex-1 space-y-1" },
+                                                    React.createElement("div", { className: "flex items-center gap-2" },
+                                                        React.createElement("span", { className: "font-bold text-slate-700 text-sm" }, item.user),
+                                                        React.createElement("span", { className: "bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded text-[10px] flex items-center gap-1" }, React.createElement(Beaker, { className: "h-3 w-3" }), `${item.targetVol}ml @ ${item.targetNic}mg`)
+                                                    ),
+                                                    React.createElement("div", { className: "text-sm" },
+                                                        React.createElement("span", { className: "text-indigo-400 text-[10px] uppercase tracking-wider font-bold block sm:inline sm:mr-1" }, "Aroma:"),
+                                                        (item.productName && (item.productName.startsWith('http') || item.productName.startsWith('https'))) ?
+                                                            React.createElement("a", { href: item.productName, target: "_blank", rel: "noreferrer", className: "text-indigo-600 hover:underline font-medium break-all" }, item.productName, React.createElement(ExternalLink, { className: "inline h-3 w-3 ml-1 opacity-50" })) :
+                                                            React.createElement("span", { className: "font-medium text-slate-800 break-all" }, item.productName)
+                                                    ),
+                                                    item.url && React.createElement("div", { className: "text-sm mt-1" },
+                                                        React.createElement("span", { className: "text-slate-400 text-[10px] uppercase tracking-wider font-bold block sm:inline sm:mr-1" }, "Extra:"),
+                                                        React.createElement("span", { className: "flex flex-wrap items-center gap-2" },
+                                                            (item.url.startsWith('http') || item.url.startsWith('https')) ?
+                                                                React.createElement("a", { href: item.url, target: "_blank", rel: "noreferrer", className: "text-indigo-500 hover:underline break-all" }, item.url, React.createElement(ExternalLink, { className: "inline h-3 w-3 ml-1" })) :
+                                                                React.createElement("span", { className: "text-slate-500 break-all" }, item.url),
+                                                            item.otherPrice > 0 && React.createElement("span", { className: "text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200" }, `+€${parseFloat(item.otherPrice).toFixed(2)}`)
+                                                        )
+                                                    )
+                                                )
+                                            ),
+                                            React.createElement("div", { className: "flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end" },
+                                                React.createElement("div", { className: "text-right" },
+                                                    React.createElement("span", { className: "font-bold text-slate-700 block" }, `€${(item.price || 0).toFixed(2)}`),
+                                                    item.details && React.createElement("span", { className: "text-xs text-slate-400 block" }, 
+                                                        `(Aroma €${((item.price || 0) - (item.details?.nicCost || 0) - (item.details?.baseCost || 0) - (item.otherPrice || 0)).toFixed(2)})`,
+                                                        item.otherPrice > 0 ? ` + Altro` : ''
+                                                    )
+                                                ),
+                                                React.createElement("button", { onClick: () => handleDeleteItem(item.id), className: "p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" }, React.createElement(Trash2, { className: "h-5 w-5" }))
+                                            )
+                                        )
+                                    )
+                            )
+                        ),
+                        // COLONNA DESTRA (TOTALE)
+                        React.createElement("div", { className: "lg:col-span-1" },
+                            React.createElement("div", { className: "bg-white rounded-xl shadow-sm border border-slate-200 p-6 sticky top-6" },
+                                React.createElement("h2", { className: "text-lg font-semibold mb-4 flex items-center gap-2 text-slate-700" }, React.createElement(Calculator, { className: "h-5 w-5 text-indigo-500" }), " Divisione Costi"),
+                                Object.keys(userTotals).length === 0 ? 
+                                    React.createElement("p", { className: "text-slate-400 text-sm italic" }, "Aggiungi articoli per vedere i costi.") :
+                                    React.createElement("div", { className: "space-y-4" },
+                                        React.createElement("div", { className: "space-y-3" },
+                                            Object.entries(userTotals).map(([u, t]) => 
+                                                React.createElement("div", { key: u, className: "flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100" },
+                                                    React.createElement("span", { className: "font-medium text-slate-700 flex items-center gap-2" }, React.createElement(User, { className: "h-4 w-4 text-slate-400" }), u),
+                                                    React.createElement("span", { className: "font-bold text-indigo-600" }, `€${t.toFixed(2)}`)
+                                                )
+                                            )
+                                        ),
+                                        React.createElement("hr", { className: "border-slate-100" }),
+                                        React.createElement("button", { onClick: copySummaryToClipboard, className: "w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium transition shadow-sm flex items-center justify-center gap-2 active:scale-95" },
+                                            showAlert ? 'Copiato!' : 'Copia Riepilogo', !showAlert && React.createElement(Copy, { className: "h-4 w-4" })
+                                        )
+                                    )
+                            )
+                        )
+                    ),
 
-                  <hr className="border-slate-100" />
+                    // MODAL IMPOSTAZIONI
+                    showSettings && React.createElement("div", { className: "fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" },
+                        React.createElement("div", { className: "bg-white rounded-2xl shadow-xl max-w-md w-full p-6 fade-in" },
+                            React.createElement("div", { className: "flex justify-between items-center mb-6" },
+                                React.createElement("h3", { className: "text-xl font-bold text-slate-800 flex items-center gap-2" }, React.createElement(Settings, { className: "h-5 w-5 text-indigo-600" }), " Configurazione Globale"),
+                                React.createElement("button", { onClick: () => setShowSettings(false), className: "text-slate-400 hover:text-slate-600" }, React.createElement(X, { className: "h-6 w-6" }))
+                            ),
+                            React.createElement("div", { className: "space-y-4" },
+                                React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-slate-700 mb-1" }, "Prezzo Basetta Nicotina (€)"), React.createElement("input", { type: "number", step: "0.01", className: "w-full p-2 border border-slate-300 rounded-lg", value: settings.nicShotPrice, onChange: e => setSettings({...settings, nicShotPrice: parseFloat(e.target.value)}) })),
+                                React.createElement("div", { className: "grid grid-cols-2 gap-4" },
+                                    React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-slate-700 mb-1" }, "Vol. Basetta (ml)"), React.createElement("input", { type: "number", className: "w-full p-2 border border-slate-300 rounded-lg", value: settings.nicShotVol, onChange: e => setSettings({...settings, nicShotVol: parseFloat(e.target.value)}) })),
+                                    React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-slate-700 mb-1" }, "Gradazione (mg)"), React.createElement("input", { type: "number", className: "w-full p-2 border border-slate-300 rounded-lg", value: settings.nicShotStrength, onChange: e => setSettings({...settings, nicShotStrength: parseFloat(e.target.value)}) }))
+                                ),
+                                React.createElement("hr", { className: "my-2" }),
+                                React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-slate-700 mb-1" }, "Costo Base (€/10ml)"), React.createElement("input", { type: "number", step: "0.01", className: "w-full p-2 border border-slate-300 rounded-lg", value: settings.basePricePer10ml, onChange: e => setSettings({...settings, basePricePer10ml: parseFloat(e.target.value)}) })),
+                                React.createElement("div", null, React.createElement("label", { className: "block text-sm font-medium text-slate-700 mb-1" }, "Vol. Aroma (ml)"), React.createElement("input", { type: "number", className: "w-full p-2 border border-slate-300 rounded-lg", value: settings.aromaVol, onChange: e => setSettings({...settings, aromaVol: parseFloat(e.target.value)}) })),
+                                React.createElement("button", { onClick: () => saveSettingsToCloud(settings), className: "w-full bg-indigo-600 text-white py-2 rounded-lg font-medium mt-4 hover:bg-indigo-700" }, "Salva Modifiche")
+                            )
+                        )
+                    )
+                )
+            );
+        };
 
-                  <button 
-                    onClick={copySummaryToClipboard}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-medium transition shadow-sm flex items-center justify-center gap-2 active:scale-95"
-                  >
-                    {showAlert ? 'Copiato!' : 'Copia Riepilogo'}
-                    {!showAlert && <Copy className="h-4 w-4" />}
-                  </button>
-                  <p className="text-xs text-center text-slate-400 mt-2">
-                    Copia il totale per WhatsApp
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Helper icon
-const ShoppingBagIcon = (props) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    width="24" 
-    height="24" 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
-    {...props}
-  >
-    <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
-  </svg>
-);
-
-export default GroupOrderManager;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(GroupOrderManager));
+    </script>
+</body>
+</html>
